@@ -30,16 +30,14 @@ async def engine():
         await conn.close()
 
     eng = create_async_engine(_DB_URL)
-    # Drop-then-create both tables for per-test isolation (children first).
+    # Clean slate (cf conftest): the shared test DB may carry tables from a
+    # prior full create_all whose FKs block a subset drop.
     async with eng.begin() as c:
-        await c.run_sync(OutlineNode.__table__.drop, checkfirst=True)
-        await c.run_sync(Course.__table__.drop, checkfirst=True)
+        await c.execute(text("DROP SCHEMA public CASCADE"))
+        await c.execute(text("CREATE SCHEMA public"))
         await c.run_sync(Course.__table__.create)
         await c.run_sync(OutlineNode.__table__.create)
     yield eng
-    async with eng.begin() as c:
-        await c.run_sync(OutlineNode.__table__.drop, checkfirst=True)
-        await c.run_sync(Course.__table__.drop, checkfirst=True)
     await eng.dispose()
 
 

@@ -149,38 +149,39 @@ class Attempt(Base):
 
 
 class QuestionTag(Base):
+    """Canonical tag (V-T1): the only target is `node_id` → outline_nodes.
+
+    The PoC's 3-target (topic_id/content_category_id/skill) is retired. `source`
+    records HOW the tag was derived (V-T2); `confidence` is required for
+    `source='llm'`, NULL otherwise, and `<0.5` ⇒ `manual_review` (V-T3).
+    """
+
     __tablename__ = "question_tags"
     __table_args__ = (
+        # V-T3: confidence required iff source='llm'.
         CheckConstraint(
-            "((topic_id IS NOT NULL)::int + (content_category_id IS NOT NULL)::int "
-            "+ (skill IS NOT NULL)::int) = 1",
-            name="ck_question_tags_exactly_one_target",
+            "(source = 'llm' AND confidence IS NOT NULL) "
+            "OR (source <> 'llm' AND confidence IS NULL)",
+            name="ck_question_tags_confidence_when_llm",
         ),
         CheckConstraint(
-            "skill IS NULL OR (skill BETWEEN 1 AND 4)",
-            name="ck_question_tags_skill_range",
-        ),
-        CheckConstraint(
-            "confidence BETWEEN 0.0 AND 1.0",
+            "confidence IS NULL OR (confidence BETWEEN 0.0 AND 1.0)",
             name="ck_question_tags_confidence_range",
         ),
+        # V-T3: low-confidence surfaces for review, ⊥ silently dropped.
         CheckConstraint(
-            "source IN ('uworld_map', 'llm', 'manual')",
+            "confidence IS NULL OR confidence >= 0.5 OR manual_review",
+            name="ck_question_tags_low_conf_flagged",
+        ),
+        CheckConstraint(
+            "source IN ('schema_map', 'llm', 'manual')",
             name="ck_question_tags_source",
         ),
         UniqueConstraint(
-            "question_id",
-            "topic_id",
-            "content_category_id",
-            "skill",
-            "source",
-            name="uq_question_tags_target_source",
-            postgresql_nulls_not_distinct=True,
+            "question_id", "node_id", "source", name="uq_question_tags_node_source"
         ),
         Index("ix_question_tags_question_id", "question_id"),
-        Index("ix_question_tags_topic_id", "topic_id"),
-        Index("ix_question_tags_content_category_id", "content_category_id"),
-        Index("ix_question_tags_skill", "skill"),
+        Index("ix_question_tags_node_id", "node_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -189,21 +190,16 @@ class QuestionTag(Base):
         ForeignKey("questions.id", ondelete="CASCADE"),
         nullable=False,
     )
-    topic_id: Mapped[Optional[int]] = mapped_column(
+    node_id: Mapped[int] = mapped_column(
         Integer,
-        ForeignKey("topics.id", ondelete="CASCADE"),
-        nullable=True,
+        ForeignKey("outline_nodes.id", ondelete="CASCADE"),
+        nullable=False,
     )
-    content_category_id: Mapped[Optional[int]] = mapped_column(
-        Integer,
-        ForeignKey("content_categories.id", ondelete="CASCADE"),
-        nullable=True,
-    )
-    skill: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    confidence: Mapped[float] = mapped_column(Numeric(3, 2), nullable=False)
     source: Mapped[str] = mapped_column(Text, nullable=False)
+    confidence: Mapped[Optional[float]] = mapped_column(Numeric(3, 2), nullable=True)
     rationale: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     extractor_version: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    manual_review: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     is_overridden: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     overridden_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True

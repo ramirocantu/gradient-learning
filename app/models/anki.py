@@ -5,6 +5,7 @@ from typing import Any, Optional
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -114,40 +115,48 @@ class AnkiCard(Base):
 
 
 class AnkiNoteTag(Base):
-    """Tag attached to an AnkiNote (§V75) — note-level mirror of `AnkiCardTag`.
+    """Canonical tag (V-T1) attached to an AnkiNote (§V75) — sole target `node_id`.
 
-    Same orthogonal axes (§V24): `parsed_kind` = WHAT it points at;
-    `source` = HOW it was derived ('regex'|'llm'|'manual'). One tag set per
-    note rather than denormalized across the note's N cards — the point of
-    the note-as-unit refactor (§V75): no per-card fan-out, one LLM
-    topic-resolution per note, `addTags` writes `notes=` straight from the
-    stored `note_id`.
+    The PoC's 3-target (topic_id/content_category_id/skill_number) is retired.
+    `node_id` is NULL-able: an unparsed tag or a bare qid reference resolves to
+    no outline node. Anki-plugin provenance (`tag_raw`, `parsed_kind`,
+    `question_qid`) is retained alongside the canonical core; `parsed_kind` is
+    now plugin-defined free text (the MCAT-specific CHECK is gone — the AnKing
+    tag-shape parser is a plugin per §A).
 
-    `question_qid` is deliberately NOT a foreign key (same rationale as
-    `AnkiCardTag` — AnKing carries qids for not-yet-scraped questions).
+    `source` records HOW the tag was derived (V-T2): the deterministic
+    tag-shape parser writes `schema_map` (was `regex`); the LLM topic resolver
+    writes `llm`; `manual` for human edits. `confidence` required iff
+    `source='llm'`, `<0.5` ⇒ `manual_review` (V-T3).
+
+    `question_qid` is deliberately NOT a foreign key — AnKing carries qids for
+    not-yet-scraped questions.
     """
 
     __tablename__ = "anki_note_tags"
     __table_args__ = (
+        # V-T3: confidence required iff source='llm'.
         CheckConstraint(
-            "parsed_kind IN ('aamc_topic', 'aamc_cc', 'aamc_skill', 'uworld_qid', 'unparsed')",
-            name="ck_anki_note_tags_parsed_kind",
-        ),
-        CheckConstraint(
-            "skill_number IS NULL OR skill_number BETWEEN 1 AND 4",
-            name="ck_anki_note_tags_skill_number",
-        ),
-        CheckConstraint(
-            "source IN ('regex', 'llm', 'manual')",
-            name="ck_anki_note_tags_source",
+            "(source = 'llm' AND confidence IS NOT NULL) "
+            "OR (source <> 'llm' AND confidence IS NULL)",
+            name="ck_anki_note_tags_confidence_when_llm",
         ),
         CheckConstraint(
             "confidence IS NULL OR (confidence BETWEEN 0.0 AND 1.0)",
             name="ck_anki_note_tags_confidence_range",
         ),
+        CheckConstraint(
+            "confidence IS NULL OR confidence >= 0.5 OR manual_review",
+            name="ck_anki_note_tags_low_conf_flagged",
+        ),
+        CheckConstraint(
+            "source IN ('schema_map', 'llm', 'manual')",
+            name="ck_anki_note_tags_source",
+        ),
+        # Canonical UQ (V-T1) + raw-tag UQ for sync idempotency (addTags).
+        UniqueConstraint("note_id", "node_id", "source", name="uq_anki_note_tags_node_source"),
         UniqueConstraint("note_id", "tag_raw", name="uq_anki_note_tags_note_tag"),
-        Index("ix_anki_note_tags_topic_id", "topic_id"),
-        Index("ix_anki_note_tags_content_category_id", "content_category_id"),
+        Index("ix_anki_note_tags_node_id", "node_id"),
         Index("ix_anki_note_tags_question_qid", "question_qid"),
         Index("ix_anki_note_tags_source", "source"),
     )
@@ -159,23 +168,25 @@ class AnkiNoteTag(Base):
         nullable=False,
     )
     tag_raw: Mapped[str] = mapped_column(Text, nullable=False)
-    topic_id: Mapped[Optional[int]] = mapped_column(
+    node_id: Mapped[Optional[int]] = mapped_column(
         Integer,
-        ForeignKey("topics.id", ondelete="SET NULL"),
+        ForeignKey("outline_nodes.id", ondelete="SET NULL"),
         nullable=True,
     )
-    content_category_id: Mapped[Optional[int]] = mapped_column(
-        Integer,
-        ForeignKey("content_categories.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-    skill_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     question_qid: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     parsed_kind: Mapped[str] = mapped_column(Text, nullable=False)
-    source: Mapped[str] = mapped_column(Text, nullable=False, server_default="regex")
-    confidence: Mapped[Optional[float]] = mapped_column(Numeric, nullable=True)
+    source: Mapped[str] = mapped_column(Text, nullable=False, server_default="schema_map")
+    confidence: Mapped[Optional[float]] = mapped_column(Numeric(3, 2), nullable=True)
     rationale: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     extractor_version: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    manual_review: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    is_overridden: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    overridden_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
     note: Mapped[AnkiNote] = relationship(back_populates="tags")
 

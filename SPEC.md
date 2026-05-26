@@ -233,3 +233,27 @@ NOTION_API_TOKEN ; NOTION_WIKI_DB_ID    # ⊥ commit
 - OpenAI model choices (`OPENAI_MODEL`, `OPENAI_CALIBRATOR_MODEL`) decided empirically in the P0 spike, not pinned here.
 - Old MCAT/UWorld attempt *data*: assumed not migrated (fresh start). UWorld capture adapter + AnKing parser kept as example code plugins.
 - `README.md` references a `backend/` subdir the repo doesn't have — fix during P0.
+
+## §T — tasks
+
+P0 — schema generalize + OpenAI pivot. Order: schema/tags foundation → SDK swap → model spike → LLM reworks → reseed → V-L2 gate (last). See FORMAT.md for `st` legend.
+
+| id | st | goal | cites |
+|-----|----|------|-------|
+| T1 | . | collapse Section/FC/CC/Topic → `courses` + recursive `outline_nodes` (kind/depth/position); migration + SQLAlchemy models | V-O1,V-O4,I.schema |
+| T2 | . | retarget tags → `node_id`; canonical `<target>_tags` tables (question/anki_card/atomic_fact/notion_page); retire PoC 3-target (topic/cc/skill) | V-T1,V-T2,V-T3,I.schema |
+| T3 | . | open `source` discriminator enum on questions/attempts; `/api/v1/captures` routes to source adapter registry | I.api,§A |
+| T4 | . | swap `anthropic`→`openai` SDK in `services/llm/`; retire V38 `cache_control` markers; `AsyncOpenAI(max_retries≥5)`; mock OpenAI at SDK boundary in tests | V38,V41,V16,V-L1,§C |
+| T5 | . | P0 spike: pick `OPENAI_MODEL` + `OPENAI_CALIBRATOR_MODEL` (logprobs-capable, non-reasoning chat model); record in `.env.example` | §C,§O |
+| T6 | . | structured output rework: OpenAI `response_format: json_schema, strict:true`; int-encode large enums before strict (honor enum-count/length limits); dual-surface NL list + `[1..N]` enum; server-side belt retained | V44,V45 |
+| T7 | . | calibration via OpenAI logprobs: discriminator Yes/No on plain completion; `Conf=exp(L_yes)/(exp(L_yes)+exp(L_no))`; `<0.5`→`manual_review` | V69,V-T3 |
+| T8 | . | V41 worker partial-failure: per-item catch `openai.APIError`/`RateLimitError`/`InternalServerError`, log WARN, break early, return `partial_failure=True`+counts; scheduler reaches `commit()`; `task_run.status='succeeded'` | V41 |
+| T9 | . | reseed AAMC as uploaded schema: `seeds/aamc_outline.schema.json` + validate-then-materialize importer (`POST /courses/{id}/outline:import`); re-upload restores MCAT | V-O2,V-O3,I.outline-import |
+| T10 | . | V-L2 GATE: measurement harness re-runs categorizer + anki-topic-resolver eval on chosen OpenAI model; record jaccard/set-equality vs PoC Claude baseline; regression blocks pivot | V-L2,V44 |
+| T11 | . | fix `README.md` `backend/` subdir reference (repo has no `backend/`) | §O |
+
+## §B — bug log
+
+| id | date | cause | fix |
+|-----|------|-------|-----|
+

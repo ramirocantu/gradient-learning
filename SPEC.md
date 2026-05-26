@@ -85,7 +85,10 @@ attempts(
   time_seconds?, flagged, session_ref TEXT?, source TEXT, created_at)
 
 # canonical TAG shape — one table per target kind, all target node_id:
-#   question_tags, anki_card_tags, atomic_fact_tags, notion_page_tags
+#   question_tags, anki_note_tags, atomic_fact_tags, notion_page_tags
+#   (anki target = anki_note_tags per note-as-unit V75; anki_card_tags
+#    dropped T95.  atomic_fact_tags + notion_page_tags = P2 — their target
+#    tables don't exist yet; T2 retargets only question_tags + anki_note_tags.)
 <target>_tags(
   id, <target>_id FK, node_id FK→outline_nodes,
   source CHECK IN ('schema_map','llm','manual'),
@@ -110,7 +113,7 @@ notion_pages(
 discriminator_factors(
   id, question_id FK, factor_text, node_id?, notion_block_id?, created_at)
 
-# carried (reuse): anki_cards, anki_card_tags, anki_card_reviews,
+# carried (reuse): anki_notes, anki_note_tags, anki_cards, anki_card_reviews,
 #   anki_assignments, anki_reviews, anki_load_config, task_runs
 ```
 
@@ -236,12 +239,12 @@ NOTION_API_TOKEN ; NOTION_WIKI_DB_ID    # ⊥ commit
 
 ## §T — tasks
 
-P0 — schema generalize + OpenAI pivot. Order: schema/tags foundation → SDK swap → model spike → LLM reworks → reseed → V-L2 gate (last). See FORMAT.md for `st` legend.
+P0 — schema generalize + OpenAI pivot. Ids are monotonic, not positional: T12–T14 (dependent-module ports) are appended but run mid-phase. **Exec order (dependency-correct, I hand-drive — ⊥ `--next` id-order):** T1 → T2 → T3 → T12 → T13 → T14 → T4 → T5 → T6 → T7 → T8 → T9 → T10(gate) → T11. Schema/tags + ports land before the OpenAI pivot so the suite compiles; gate last. See FORMAT.md for `st` legend.
 
 | id | st | goal | cites |
 |-----|----|------|-------|
 | T1 | x | collapse Section/FC/CC/Topic → `courses` + recursive `outline_nodes` (kind/depth/position); migration + SQLAlchemy models | V-O1,V-O4,I.schema |
-| T2 | . | retarget tags → `node_id`; canonical `<target>_tags` tables (question/anki_card/atomic_fact/notion_page); retire PoC 3-target (topic/cc/skill) | V-T1,V-T2,V-T3,I.schema |
+| T2 | . | retarget tags → `node_id`; canonical `<target>_tags` shape on `question_tags` + `anki_note_tags` (atomic_fact/notion_page tags = P2, tables not built); retire PoC 3-target (topic/cc/skill); `source` enum → {schema_map,llm,manual}; confidence NULL-able + `manual_review` | V-T1,V-T2,V-T3,I.schema |
 | T3 | . | open `source` discriminator enum on questions/attempts; `/api/v1/captures` routes to source adapter registry | I.api,§A |
 | T4 | . | swap `anthropic`→`openai` SDK in `services/llm/`; retire V38 `cache_control` markers; `AsyncOpenAI(max_retries≥5)`; mock OpenAI at SDK boundary in tests | V38,V41,V16,V-L1,§C |
 | T5 | . | P0 spike: pick `OPENAI_MODEL` + `OPENAI_CALIBRATOR_MODEL` (logprobs-capable, non-reasoning chat model); record in `.env.example` | §C,§O |
@@ -251,6 +254,9 @@ P0 — schema generalize + OpenAI pivot. Order: schema/tags foundation → SDK s
 | T9 | . | reseed AAMC as uploaded schema: `seeds/aamc_outline.schema.json` + validate-then-materialize importer (`POST /courses/{id}/outline:import`); re-upload restores MCAT | V-O2,V-O3,I.outline-import |
 | T10 | . | V-L2 GATE: measurement harness re-runs categorizer + anki-topic-resolver eval on chosen OpenAI model; record jaccard/set-equality vs PoC Claude baseline; regression blocks pivot | V-L2,V44 |
 | T11 | . | fix `README.md` `backend/` subdir reference (repo has no `backend/`) | §O |
+| T12 | . | port categorizer + outline resolution → `node_id`: `app/services/categorizer/outline_lookup.py` (resolve node by ` >> ` path, ⊥ section/cc/topic codes) + categorizer job + `app/api/v1/recommendations.py` | V-O1,V-T1,V-T2 |
+| T13 | . | port anki layer → `node_id`: `app/services/anki/{topic_resolver_worker,topic_resolver_batch,queries}.py` + assignment/review scope → node_id subtree rollup | V-O1,V-T1 |
+| T14 | . | port dashboard + read-services → `node_id`: `app/web/dashboard/services/*` (mastery, drilldown, sessions, anki_scope) + routes/questions + utils, `app/services/{analytics,recommender}.py`, `app/services/analyzer/*`, `app/services/tutor/*`; shared subtree-rollup helper (V-O1 set rollup) | V-O1,V-T1,V-E2 |
 
 ## §B — bug log
 

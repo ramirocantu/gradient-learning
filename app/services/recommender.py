@@ -1,15 +1,24 @@
-"""Study-next recommender.
+"""Study-next recommender — FENCED (T17, V-RB1, V-O5).
 
-TODO(T14): the original PoC scorer is gone — it was tied to the 3-target tag
-shape (QuestionTag.topic_id / .content_category_id) and the section/cc/topic
-tables. Restoring it needs:
-  - node_id mastery rollup via the subtree-set helper (V-O1),
-  - feature-pattern analysis ported off the old outline,
-  - recency + AAMC weighting reworked without section codes.
+Per §G (2026-05-26 rescope) the study-plan / recommender surface is
+candidate-for-cut: not part of the PKM critical loop
+(question review → discriminator factors → atomic facts → Notion).
+The PoC scorer was tied to the dropped 3-target tag shape
+(`QuestionTag.topic_id / .content_category_id`) and the
+Section/FC/CC/Topic outline tables; rebuilding it would need a node_id
+mastery rollup + feature-pattern analysis + AAMC weighting rework.
 
-This stub keeps the import surface (so the API endpoint loads) and returns
-an empty result; T14 reimplements `recommend` against the canonical node_id
-tags + ported analytics.
+Until a decision is made (post-P0.5; see T34 reassessment), this module
+is FENCED:
+
+  - the `/api/v1/recommendations/*` router is unmounted in `app/main.py`,
+  - the dashboard recommendations route is unmounted in
+    `app/web/dashboard/main.py`,
+  - `recommend()` returns an empty result so any direct import does not
+    crash,
+  - related tests are collect-ignored in `tests/conftest.py`.
+
+This file is FENCED, not a stub: behavior is deliberate, not in-progress.
 """
 
 from __future__ import annotations
@@ -21,6 +30,12 @@ from typing import Literal
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: F401 — kept for signature
 
 logger = logging.getLogger(__name__)
+
+
+_FENCED_MSG = (
+    "recommender.recommend is FENCED (T17, V-RB1) — route unmounted; "
+    "rescope candidate-for-cut pending T34 reassessment"
+)
 
 
 MIN_ATTEMPTS = 3
@@ -54,9 +69,6 @@ class RecommendationResult:
 
 
 async def recommend(session: AsyncSession, *, n: int = 5) -> RecommendationResult:
-    """Stub — TODO(T14) port to node_id mastery rollup. Returns empty."""
-    logger.warning(
-        "recommender.recommend stub: returns empty until T14 ports analytics + "
-        "scorer onto node_id canonical tags"
-    )
+    """FENCED — see module docstring. Returns an empty result."""
+    logger.warning(_FENCED_MSG)
     return RecommendationResult(recommendations=[], total_candidates_scored=0)

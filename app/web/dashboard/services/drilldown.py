@@ -1,16 +1,22 @@
-"""Data-fetching helpers for the CC drilldown page — T14 stub.
+"""Data-fetching helpers for the CC drilldown page — partially FENCED
+(T17, V-RB1, V-O5).
 
-The PoC's helpers queried Section/FoundationalConcept/ContentCategory/Topic
-+ the 3-target `question_tags` to drive the `/mastery/{cc}` drilldown.
-Outline tables are gone (T1) and 3-target columns are gone (T2). Restoring
-the drilldown needs node-id lookup via `OutlineLookup` + node_id subtree
-rollup (`outline_subtree.subtree_node_ids`).
+Outline-dependent helpers (`get_cc_info`, `get_questions_for_cc`,
+`get_questions_for_topic_subtree`, `list_question_cards`, `list_all_ccs`,
+`list_topics_for_cc`, `_filter_topics_for_cc`, `_tags_summaries_for`) are
+FENCED — the dashboard mastery / topics routes that consume them are
+unmounted in `app/web/dashboard/main.py`; restoration is tied to the T34
+SPA reassessment.
 
-Public surface preserved so the route modules + templates load; query
-helpers return empty / None / minimal placeholders. The question-detail
-path (`get_full_question`, `get_question_detail`, `media_by_hash_for_question`)
-is preserved real where it doesn't depend on the outline — it reads
-`questions` / `passages` / `attempts` / `media` / `attempt_notes` directly.
+Outline-free helpers (`get_question_card`, `get_full_question`,
+`get_question_detail`, `media_by_hash_for_question`) remain real — they
+read `questions` / `passages` / `attempts` / `media` / `attempt_notes`
+directly and back the `questions` dashboard route which stays mounted.
+
+The FENCED helpers stay importable so the route modules load even while
+unmounted; they return empty / None / placeholder values and log a
+FENCED warning. This file is partially FENCED, not a stub: behavior is
+deliberate, not in-progress.
 """
 
 from __future__ import annotations
@@ -54,7 +60,7 @@ class TagSummary:
     tag_id: int
     label: str
     source: str
-    kind: str  # legacy: 'topic'|'content_category'|'skill' — node_id port reshapes
+    kind: str  # FENCED — legacy 3-target shape; node_id port (T34) reshapes.
     confidence: float = 0.0
     rationale: str | None = None
 
@@ -127,53 +133,64 @@ def truncate_to_chars(text: str, n: int) -> tuple[str, bool]:
 
 
 # --------------------------------------------------------------------------- #
-# Outline-dependent — stubbed.
+# Outline-dependent — FENCED.
 # --------------------------------------------------------------------------- #
 
 
+_FENCED_MSG = (
+    "dashboard.services.drilldown outline-dependent helpers are FENCED "
+    "(T17, V-RB1) — consuming routes unmounted; restoration tied to T34"
+)
+
+
 async def get_cc_info(session: AsyncSession, cc_code: str) -> CCInfo | None:
-    """TODO(T14 follow-up): resolve via OutlineLookup.node_id_by_path."""
-    logger.warning("get_cc_info stub: None pending node_id port")
+    """FENCED — returns None."""
+    logger.warning(_FENCED_MSG)
     return None
 
 
 async def get_questions_for_cc(session: AsyncSession, cc_id: int) -> list[int]:
-    logger.warning("get_questions_for_cc stub: empty pending node_id port")
+    """FENCED — returns empty list."""
+    logger.warning(_FENCED_MSG)
     return []
 
 
 async def get_questions_for_topic_subtree(
     session: AsyncSession, topic_id: int
 ) -> list[int]:
-    logger.warning("get_questions_for_topic_subtree stub: empty pending node_id port")
+    """FENCED — returns empty list."""
+    logger.warning(_FENCED_MSG)
     return []
 
 
 async def list_question_cards(session: AsyncSession, *args, **kwargs) -> list[QuestionCard]:
-    logger.warning("list_question_cards stub: empty pending node_id port")
+    """FENCED — returns empty list."""
+    logger.warning(_FENCED_MSG)
     return []
 
 
 async def list_all_ccs(session: AsyncSession) -> list[Any]:
-    logger.warning("list_all_ccs stub: empty pending node_id port (ContentCategory dropped)")
+    """FENCED — returns empty list."""
+    logger.warning(_FENCED_MSG)
     return []
 
 
 async def list_topics_for_cc(session: AsyncSession, cc_code: str) -> list[Any]:
-    logger.warning("list_topics_for_cc stub: empty pending node_id port (Topic dropped)")
+    """FENCED — returns empty list."""
+    logger.warning(_FENCED_MSG)
     return []
 
 
 def _filter_topics_for_cc(by_topic: list[Any], cc_code: str) -> list[TopicRow]:
-    """Stub — by_topic comes from compute_mastery (also stubbed); returns []."""
+    """FENCED — by_topic comes from compute_mastery (also FENCED); returns []."""
     return []
 
 
 async def _tags_summaries_for(
     session: AsyncSession, question_ids: list[int]
 ) -> dict[int, list[TagSummary]]:
-    """Stub — old query joined Topic/CC; node_id port resolves via OutlineLookup."""
-    logger.warning("_tags_summaries_for stub: empty pending node_id port")
+    """FENCED — returns empty mapping."""
+    logger.warning(_FENCED_MSG)
     return {}
 
 
@@ -186,7 +203,7 @@ async def get_question_card(
     session: AsyncSession, question_id: int
 ) -> QuestionCard | None:
     """Minimal preserved version — fetches the question + latest attempt; tags
-    list is empty (depends on `_tags_summaries_for` which is stubbed)."""
+    list is empty (depends on `_tags_summaries_for` which is FENCED)."""
     q = await session.get(Question, question_id)
     if q is None:
         return None

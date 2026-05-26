@@ -20,7 +20,7 @@ from app.services.tutor import (
     captures as captures_svc,
     flags as flags_svc,
     health as health_svc,
-    outline as outline_svc,
+    # outline as outline_svc,  # FENCED (T17, V-RB1) — routes unmounted
     questions as questions_svc,
     sessions as sessions_svc,
 )
@@ -104,22 +104,26 @@ async def get_flagged_attempts(
     return await flags_svc.get_flagged_attempts(session, limit=limit)
 
 
-@router.get("/outline/topics/search")
-async def search_topics(
-    q: Annotated[str, Query()],
-    limit: Annotated[int, Query(ge=1, le=100)] = 20,
-    session: AsyncSession = Depends(get_session),
-    _: None = Depends(verify_coach_token),
-) -> list[dict[str, Any]]:
-    return await outline_svc.search_topics(session, query=q, limit=limit)
-
-
-@router.get("/outline")
-async def get_aamc_outline(
-    session: AsyncSession = Depends(get_session),
-    _: None = Depends(verify_coach_token),
-) -> dict[str, Any]:
-    return await outline_svc.get_aamc_outline(session)
+# FENCED (T17, V-RB1, V-O5): tutor outline routes consume FENCED
+# `app.services.tutor.outline`. Restoration is tracked in T22 (OutlineLookup
+# port). The route handlers are commented out — direct callers should treat
+# the endpoints as 404 until T22 lands.
+# @router.get("/outline/topics/search")
+# async def search_topics(
+#     q: Annotated[str, Query()],
+#     limit: Annotated[int, Query(ge=1, le=100)] = 20,
+#     session: AsyncSession = Depends(get_session),
+#     _: None = Depends(verify_coach_token),
+# ) -> list[dict[str, Any]]:
+#     return await outline_svc.search_topics(session, query=q, limit=limit)
+#
+#
+# @router.get("/outline")
+# async def get_aamc_outline(
+#     session: AsyncSession = Depends(get_session),
+#     _: None = Depends(verify_coach_token),
+# ) -> dict[str, Any]:
+#     return await outline_svc.get_aamc_outline(session)
 
 
 @router.get("/healthz")

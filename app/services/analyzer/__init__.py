@@ -1,18 +1,22 @@
-"""Feature extractor — T14 stub.
+"""Feature extractor — FENCED (T17, V-RB1, V-O5).
 
 The PoC's `extract_features_for_question` resolved a question's outline
 ancestry via the dropped `Topic`/`ContentCategory`/`FoundationalConcept`/
 `Section` tables (used to skip CARS via `_is_cars_question` walking
 topic→cc→fc→section) and called Anthropic for LLM judgment features.
 
-Stubbed because:
-  - Outline walk is dead (T1).
-  - Anthropic SDK pivots to OpenAI in T4.
-  - CARS detection by section code is gone (V-O3 — codes are dropped); the
-    follow-up port detects domain-blind via outline node attributes or a
-    domain-pack flag.
+FENCED because:
+  - outline walk is dead (T1) — domain-blind CARS detection requires a
+    domain-pack flag or outline-node attribute (post-P0.5),
+  - Anthropic→OpenAI SDK pivot lives in T35 follow-up for this surface,
+  - `/api/v1/analyzer/*` router is unmounted in `app/main.py`,
+  - dashboard `insights` route is unmounted in `app/web/dashboard/main.py`,
+  - `run_feature_extraction_job` scheduler entry is unregistered in
+    `app/scheduler.py`,
+  - related tests are collect-ignored in `tests/conftest.py`.
 
-Public surface preserved so the scheduler + insights routes still import.
+`extract_features_for_question` returns a skipped result so callers that
+still hold a reference do not crash. Public surface preserved.
 """
 
 from __future__ import annotations
@@ -43,10 +47,11 @@ __all__ = [
 ]
 
 
-# §A: core is domain-blind. MCAT-specific CARS skipping (the old
-# `CARS_SKIPPED_REASON = "cars_deferred_to_4_1b"`) belonged in the MCAT pack,
-# not in core feature extraction — retired. Stub uses a domain-neutral reason.
-_T14_PORT_PENDING_REASON = "t14_port_pending"
+_FENCED_REASON = "fenced_t17"
+_FENCED_MSG = (
+    "analyzer.extract_features_for_question is FENCED (T17, V-RB1) — "
+    "route + scheduler entry unmounted; restoration pending post-P0.5"
+)
 
 
 class QuestionNotFoundError(LookupError):
@@ -72,16 +77,13 @@ async def extract_features_for_question(
     session: AsyncSession,
     **_kwargs,
 ) -> FeatureExtractionResult:
-    """Stub — TODO(T4 + T14 follow-up)."""
-    logger.warning(
-        "extract_features_for_question stub: returns skipped result until T4 "
-        "(openai) + T14 (node_id CARS detection) ports land"
-    )
+    """FENCED — see module docstring. Returns a skipped result."""
+    logger.warning(_FENCED_MSG)
     return FeatureExtractionResult(
         question_id=question_id,
         qid="",
         persisted=False,
-        skipped_reason=_T14_PORT_PENDING_REASON,
+        skipped_reason=_FENCED_REASON,
         cache_hit=False,
         cost_estimate_usd=0.0,
         cost_saved_usd=0.0,

@@ -1,17 +1,22 @@
-"""Mastery heatmap data builder — T14 stub.
+"""Mastery heatmap data builder — FENCED (T17, V-RB1, V-O5).
 
 The PoC's mastery rollups joined `Section`/`FoundationalConcept`/
 `ContentCategory`/`Topic` + the 3-target `question_tags` + Anki state /
-retention helpers. All four outline tables are dropped (T1), the 3-target
-columns are dropped (T2), and the Anki subtree helpers are stubbed in T13.
+retention helpers. All four outline tables are dropped (T1) and the
+3-target columns are dropped (T2).
 
-Restoring the heatmap + drilldown headers needs:
-  - node_id subtree rollup via `app.services.outline_subtree.subtree_node_ids`,
-  - the anki state / retention helpers ported onto node_id (T13 follow-up),
-  - a domain-pack flag for the "is_cars" discriminator (no AAMC section codes).
+The Jinja mastery / drilldown / topics / recommendations / insights
+dashboard surface is not on the PKM critical loop and is gated by the
+T34 SPA reassessment (§P, §C frontend-stack carve-out). Until then this
+module is FENCED:
 
-This stub keeps the public surface so the dashboard routes load and
-templates render empty data instead of 500-ing.
+  - the dashboard `mastery`, `topics`, `recommendations`, `insights`
+    routes are unmounted in `app/web/dashboard/main.py`,
+  - all public functions return empty / placeholder values so any
+    direct import does not crash,
+  - related tests are collect-ignored in `tests/conftest.py`.
+
+This file is FENCED, not a stub: behavior is deliberate, not in-progress.
 """
 
 from __future__ import annotations
@@ -23,6 +28,12 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: F401 — kept for signature
 
 logger = logging.getLogger(__name__)
+
+
+_FENCED_MSG = (
+    "dashboard.services.mastery is FENCED (T17, V-RB1) — dashboard routes "
+    "unmounted; restoration tied to T34 SPA reassessment"
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -131,18 +142,19 @@ def _empty_state_breakdown() -> StateBreakdown:
 
 
 # --------------------------------------------------------------------------- #
-# Public surface — stubs until node_id rollup port lands.
+# Public surface — FENCED placeholders.
 # --------------------------------------------------------------------------- #
 
 
 async def build_heatmap(session: AsyncSession) -> dict[str, list[HeatmapCell]]:
-    """Stub — TODO(T14 follow-up): rebuild on node_id subtree rollup."""
-    logger.warning("build_heatmap stub: empty pending node_id port")
+    """FENCED — returns empty mapping."""
+    logger.warning(_FENCED_MSG)
     return {}
 
 
 async def cc_header(session: AsyncSession, *, cc_code: str) -> CCHeader:
-    logger.warning("cc_header stub: empty pending node_id port")
+    """FENCED — returns zeroed header."""
+    logger.warning(_FENCED_MSG)
     return CCHeader(
         cc_code=cc_code,
         is_cars=False,
@@ -157,20 +169,22 @@ async def cc_header(session: AsyncSession, *, cc_code: str) -> CCHeader:
 
 
 async def cc_anki_overview(session: AsyncSession, *, cc_code: str) -> StateBreakdown:
-    logger.warning("cc_anki_overview stub: empty pending node_id port")
+    """FENCED — returns empty StateBreakdown."""
+    logger.warning(_FENCED_MSG)
     return _empty_state_breakdown()
 
 
 async def cc_topics_tree(
     session: AsyncSession, *, cc_id: int, cc_code: str
 ) -> list[TopicTreeRow]:
-    logger.warning("cc_topics_tree stub: empty pending node_id port")
+    """FENCED — returns empty list."""
+    logger.warning(_FENCED_MSG)
     return []
 
 
 async def topic_header(session: AsyncSession, *, cc_code: str, topic: Any) -> TopicHeader:
-    """`topic` is the OutlineNode-or-equivalent — kept Any for the stub period."""
-    logger.warning("topic_header stub: empty pending node_id port")
+    """FENCED — returns zeroed header."""
+    logger.warning(_FENCED_MSG)
     return TopicHeader(
         cc_code=cc_code,
         topic_id=getattr(topic, "id", 0),
@@ -186,21 +200,22 @@ async def topic_header(session: AsyncSession, *, cc_code: str, topic: Any) -> To
 
 
 async def topic_anki_overview(session: AsyncSession, *, topic_id: int) -> StateBreakdown:
-    logger.warning("topic_anki_overview stub: empty pending node_id port")
+    """FENCED — returns empty StateBreakdown."""
+    logger.warning(_FENCED_MSG)
     return _empty_state_breakdown()
 
 
 async def topic_children_tree(
     session: AsyncSession, *, cc_code: str, root_topic_id: int
 ) -> list[TopicTreeRow]:
-    logger.warning("topic_children_tree stub: empty pending node_id port")
+    """FENCED — returns empty list."""
+    logger.warning(_FENCED_MSG)
     return []
 
 
 async def validate_topic_chain(
     session: AsyncSession, *, cc_code: str, ids: list[int]
 ) -> tuple[list[Any], list[BreadcrumbItem]] | None:
-    """Stub — TODO(T14 follow-up): port the §V32 id-path chain check onto
-    `outline_nodes.parent_id`."""
-    logger.warning("validate_topic_chain stub: returns None pending node_id port")
+    """FENCED — returns None."""
+    logger.warning(_FENCED_MSG)
     return None

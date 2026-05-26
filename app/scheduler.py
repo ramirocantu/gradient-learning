@@ -597,13 +597,17 @@ def start_scheduler() -> None:
         id="run_categorizer",
         replace_existing=True,
     )
-    scheduler.add_job(
-        run_feature_extraction_job,
-        "interval",
-        minutes=settings.FEATURE_EXTRACTION_INTERVAL_MINUTES,
-        id="run_feature_extraction",
-        replace_existing=True,
-    )
+    # FENCED (T17, V-RB1, V-O5): run_feature_extraction_job consumes the
+    # FENCED `app.services.analyzer.extract_features_for_question`. The job
+    # itself stays defined (imports + helpers remain usable for direct
+    # invocation under test), but no scheduler entry is registered.
+    # scheduler.add_job(
+    #     run_feature_extraction_job,
+    #     "interval",
+    #     minutes=settings.FEATURE_EXTRACTION_INTERVAL_MINUTES,
+    #     id="run_feature_extraction",
+    #     replace_existing=True,
+    # )
     scheduler.add_job(
         run_anki_sync_job,
         "interval",

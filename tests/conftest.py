@@ -11,6 +11,35 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 import app.models  # noqa: F401  — registers all models on Base.metadata
 from app.database import Base
 
+
+# FENCED (T17, V-RB1, V-O5): test modules that exercise FENCED service
+# surfaces (`app/services/{analytics,recommender,analyzer,tutor/outline}.py`
+# + `app/web/dashboard/services/{mastery,drilldown,anki_scope}.py`) are
+# collect-ignored. Restoration is tied to the post-P0.5 node_id rollup port
+# and the T34 SPA reassessment.
+collect_ignore_glob = [
+    "test_analytics.py",
+    "test_recommender.py",
+    "test_feature_extractor.py",
+    "test_feature_extraction_worker.py",
+    "test_pattern_aggregator.py",
+    "test_trajectory.py",
+    "test_synthesizer.py",
+    "test_analyzer_endpoint.py",
+    "test_mastery_acceptance.py",
+    "test_tutor_routes.py",
+    "web/dashboard/test_mastery.py",
+    "web/dashboard/test_mastery_assign.py",
+    "web/dashboard/test_mastery_heatmap.py",
+    "web/dashboard/test_drilldown.py",
+    "web/dashboard/test_cc_drilldown_anki_panel.py",
+    "web/dashboard/test_cc_drilldown_header.py",
+    "web/dashboard/test_cc_drilldown_layout.py",
+    "web/dashboard/test_topic_drilldown.py",
+    "web/dashboard/test_anki_scope.py",
+    "web/dashboard/test_insights.py",
+]
+
 _HOST_PORT = os.environ.get("HOST_POSTGRES_PORT", "5432")
 TEST_DB_URL = f"postgresql+asyncpg://gradient:gradient_secret@localhost:{_HOST_PORT}/gradient_test"
 _ADMIN_DSN = f"postgresql://gradient:gradient_secret@localhost:{_HOST_PORT}/gradient"

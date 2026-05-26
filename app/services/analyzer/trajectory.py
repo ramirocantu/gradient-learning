@@ -1,14 +1,10 @@
-"""Windowed accuracy trajectory per CC + per topic — T14 stub.
+"""Windowed accuracy trajectory per CC + per topic — FENCED (T17, V-RB1, V-O5).
 
-The PoC's raw-SQL trajectory walked `attempts → question_tags →
-topics/content_categories` with a recursive CTE over `topics.parent_topic_id`.
-All three of those tables are gone (T1), so the recursive CTE moves to
-`outline_nodes.parent_id` via `outline_subtree.subtree_node_ids` and the
-`question_tags.node_id` canonical column.
-
-Stub keeps the public dataclasses + entry points so mastery's "(last 10 vs
-prior 10)" trend block keeps importing; both `trajectory_for_*` return an
-empty summary until the node_id port lands.
+Trajectory consumes the same dashboard mastery surfaces that T17 has
+fenced. Public dataclasses + entry points stay importable so the mastery
+service (also FENCED) does not raise on import; both `trajectory_for_*`
+return an empty summary. Restoration depends on a node_id subtree rollup
+and is tracked post-P0.5.
 """
 
 from __future__ import annotations
@@ -68,12 +64,16 @@ def _empty(scope: str) -> TrajectorySummary:
 
 
 async def trajectory_for_cc(session: AsyncSession, *, cc_code: str) -> TrajectorySummary:
-    """Stub — TODO(T14 follow-up): port to node_id subtree."""
-    logger.warning("trajectory_for_cc stub: empty pending node_id port")
+    """FENCED — see module docstring. Returns an empty summary."""
+    logger.warning(
+        "analyzer.trajectory.trajectory_for_cc is FENCED (T17, V-RB1)"
+    )
     return _empty(f"cc:{cc_code}")
 
 
 async def trajectory_for_topic(session: AsyncSession, *, topic_id: int) -> TrajectorySummary:
-    """Stub — TODO(T14 follow-up): port to node_id subtree."""
-    logger.warning("trajectory_for_topic stub: empty pending node_id port")
+    """FENCED — see module docstring. Returns an empty summary."""
+    logger.warning(
+        "analyzer.trajectory.trajectory_for_topic is FENCED (T17, V-RB1)"
+    )
     return _empty(f"topic:{topic_id}")

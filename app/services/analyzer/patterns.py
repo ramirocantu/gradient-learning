@@ -1,14 +1,14 @@
-"""Pattern aggregator — T14 stub.
+"""Pattern aggregator — FENCED (T17, V-RB1, V-O5).
 
 The PoC's `analyze` built feature-pattern findings by joining `attempts` →
 `questions` → `question_tags(topic_id|content_category_id|skill)` →
-`topics`/`content_categories`/`sections` to filter and group. All four outline
-tables are gone (T1) and the 3-target tag columns are gone (T2), so the
-analyzer needs a node-subtree rollup port (uses `outline_subtree.subtree_node_ids`).
+`topics`/`content_categories`/`sections` to filter and group. All four
+outline tables are gone (T1) and the 3-target tag columns are gone (T2).
 
-Stub keeps the public surface (`AnalysisFilter`, `FeatureFinding`,
-`CoverageStats`, `InsightReport`, `wilson_upper`, `analyze`) so insights
-routes import; `analyze` returns an empty report.
+FENCED because the consuming routes (`/api/v1/analyzer/patterns` and the
+dashboard `insights` route) are unmounted per T17. `analyze` returns an
+empty report so direct imports do not crash. Restoration depends on a
+node_id subtree rollup and is tracked post-P0.5.
 """
 
 from __future__ import annotations
@@ -89,6 +89,8 @@ class InsightReport:
 
 
 async def analyze(filter: AnalysisFilter, session: AsyncSession) -> InsightReport:
-    """Stub — TODO(T14 follow-up): port to node_id rollup."""
-    logger.warning("analyze stub: empty InsightReport pending node_id port")
+    """FENCED — see module docstring. Returns an empty report."""
+    logger.warning(
+        "analyzer.patterns.analyze is FENCED (T17, V-RB1) — route unmounted"
+    )
     return InsightReport(filter_applied=filter)

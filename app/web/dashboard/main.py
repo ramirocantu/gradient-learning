@@ -9,13 +9,14 @@ from app.web.dashboard.routes import (
     admin,
     anki,
     home,
-    insights,
-    mastery,
     questions,
-    recommendations,
     sessions,
-    topics,
 )
+# FENCED (T17, V-RB1, V-O5): mastery/topics/recommendations/insights routes
+# consume FENCED services (app/services/{analytics,recommender,analyzer}
+# + app/web/dashboard/services/{mastery,drilldown}). Restoration is tied to
+# the T34 SPA reassessment.
+# from app.web.dashboard.routes import insights, mastery, recommendations, topics
 from app.web.dashboard.routes.questions import tags_router
 
 app = FastAPI(
@@ -37,10 +38,11 @@ app.state.templates = templates
 
 app.include_router(home.router)
 app.include_router(sessions.router)
-app.include_router(mastery.router)
-app.include_router(topics.router)
-app.include_router(recommendations.router)
-app.include_router(insights.router)
+# FENCED (T17, V-RB1): mastery/topics/recommendations/insights include disabled.
+# app.include_router(mastery.router)
+# app.include_router(topics.router)
+# app.include_router(recommendations.router)
+# app.include_router(insights.router)
 app.include_router(questions.router)
 app.include_router(tags_router)
 app.include_router(admin.router)

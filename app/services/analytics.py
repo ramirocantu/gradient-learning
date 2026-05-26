@@ -1,14 +1,21 @@
-"""Topic-level analytics rollups.
+"""Topic-level analytics rollups — FENCED (T17, V-RB1, V-O5).
 
-T14 stub. The PoC's `compute_mastery` walked Section/FC/CC/Topic + the
-3-target `QuestionTag(topic_id/content_category_id/skill)`. All four outline
-tables are gone (T1) and the 3-target columns are gone (T2). Restoring
-mastery needs a node_id subtree rollup via `app.services.outline_subtree`.
+Mastery rollups are off the PKM critical path per the 2026-05-26 rescope.
+The PoC's `compute_mastery` walked Section/FC/CC/Topic + the 3-target
+`QuestionTag(topic_id/content_category_id/skill)`. All four outline tables
+are gone (T1) and the 3-target columns are gone (T2).
 
-This stub keeps the public surface — dataclasses + `wilson_lower` (pure math)
-+ `compute_mastery` returning an empty `MasteryReport` — so the API/dashboard
-routes load. Real rollup lands when the read services are reimplemented
-against canonical `QuestionTag.node_id` + `outline_subtree.subtree_node_ids`.
+Restoration depends on a node_id subtree rollup via
+`app.services.outline_subtree` and is tracked separately (post-P0.5,
+candidate for P3 or P4 once the dashboard SPA reassessment at T34 picks
+which mastery surfaces survive). Until then:
+
+  - the `/api/v1/analytics/*` router is unmounted in `app/main.py`,
+  - `compute_mastery` returns an empty `MasteryReport` so any direct
+    import does not crash,
+  - related tests are collect-ignored in `tests/conftest.py`.
+
+This file is FENCED, not a stub: behavior is deliberate, not in-progress.
 """
 
 from __future__ import annotations
@@ -22,6 +29,12 @@ from typing import Literal
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: F401 — kept for signature
 
 logger = logging.getLogger(__name__)
+
+
+_FENCED_MSG = (
+    "analytics.compute_mastery is FENCED (T17, V-RB1) — route unmounted; "
+    "restoration pending post-P0.5 port to OutlineNode + outline_subtree"
+)
 
 
 AccuracyKind = Literal["section", "content_category", "topic", "skill"]
@@ -87,9 +100,6 @@ def wilson_lower(correct: int, attempts: int, z: float = 1.96) -> float:
 
 
 async def compute_mastery(session: AsyncSession) -> MasteryReport:
-    """Stub — TODO(T14 follow-up): node_id rollup via outline_subtree."""
-    logger.warning(
-        "compute_mastery stub: returns empty MasteryReport until the node_id "
-        "rollup port lands (see app.services.outline_subtree.subtree_node_ids)"
-    )
+    """FENCED — see module docstring. Returns an empty report."""
+    logger.warning(_FENCED_MSG)
     return MasteryReport()

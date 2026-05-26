@@ -22,8 +22,8 @@ from app.models.captures import Passage, Question, QuestionTag
 from app.models.outline import Course, OutlineNode
 
 _HOST_PORT = os.environ.get("HOST_POSTGRES_PORT", "5432")
-_DB_URL = f"postgresql+asyncpg://mcat:mcat_secret@localhost:{_HOST_PORT}/mcat_coach_test"
-_ADMIN_DSN = f"postgresql://mcat:mcat_secret@localhost:{_HOST_PORT}/mcat_coach"
+_DB_URL = f"postgresql+asyncpg://mcat:mcat_secret@localhost:{_HOST_PORT}/gradient_test"
+_ADMIN_DSN = f"postgresql://mcat:mcat_secret@localhost:{_HOST_PORT}/gradient"
 
 _TABLES = [
     Course.__table__,
@@ -40,7 +40,7 @@ _TABLES = [
 async def engine():
     conn = await asyncpg.connect(_ADMIN_DSN)
     try:
-        await conn.execute("CREATE DATABASE mcat_coach_test")
+        await conn.execute("CREATE DATABASE gradient_test")
     except asyncpg.exceptions.DuplicateDatabaseError:
         pass
     finally:

@@ -32,7 +32,7 @@ from app.models.outline import ContentCategory
 
 
 _HOST_PORT = os.environ.get("HOST_POSTGRES_PORT", "5432")
-_ADMIN_DSN = f"postgresql://mcat:mcat_secret@localhost:{_HOST_PORT}/mcat_coach"
+_ADMIN_DSN = f"postgresql://mcat:mcat_secret@localhost:{_HOST_PORT}/gradient"
 _BACKEND_DIR = Path(__file__).resolve().parent.parent
 
 
@@ -105,7 +105,7 @@ async def _get_cars_cc_id(session: AsyncSession) -> int:
 
 
 async def test_migrations_apply_and_rollback():
-    db_name = "mcat_coach_migrate_test"
+    db_name = "gradient_migrate_test"
     admin = await asyncpg.connect(_ADMIN_DSN)
     try:
         await admin.execute(

@@ -22,7 +22,7 @@ from app.models.features import QuestionFeatures
 
 
 _HOST_PORT = os.environ.get("HOST_POSTGRES_PORT", "5432")
-_ADMIN_DSN = f"postgresql://mcat:mcat_secret@localhost:{_HOST_PORT}/mcat_coach"
+_ADMIN_DSN = f"postgresql://mcat:mcat_secret@localhost:{_HOST_PORT}/gradient"
 _BACKEND_DIR = Path(__file__).resolve().parent.parent
 
 _EXTRACTOR_VERSION = "v1-claude-haiku-4-5-test"
@@ -96,7 +96,7 @@ def _features_kwargs(question_id: int, **overrides) -> dict:
 
 
 async def test_migration_apply_and_rollback():
-    db_name = "mcat_coach_4_1_migrate_test"
+    db_name = "gradient_4_1_migrate_test"
     admin = await asyncpg.connect(_ADMIN_DSN)
     try:
         await admin.execute(

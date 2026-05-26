@@ -12,8 +12,8 @@ import app.models  # noqa: F401  — registers all models on Base.metadata
 from app.database import Base
 
 _HOST_PORT = os.environ.get("HOST_POSTGRES_PORT", "5432")
-TEST_DB_URL = f"postgresql+asyncpg://mcat:mcat_secret@localhost:{_HOST_PORT}/mcat_coach_test"
-_ADMIN_DSN = f"postgresql://mcat:mcat_secret@localhost:{_HOST_PORT}/mcat_coach"
+TEST_DB_URL = f"postgresql+asyncpg://mcat:mcat_secret@localhost:{_HOST_PORT}/gradient_test"
+_ADMIN_DSN = f"postgresql://mcat:mcat_secret@localhost:{_HOST_PORT}/gradient"
 
 
 @pytest.fixture(scope="session")
@@ -35,7 +35,7 @@ def test_media_root(tmp_path_factory: pytest.TempPathFactory) -> Path:
 async def test_engine(test_media_root):
     conn = await asyncpg.connect(_ADMIN_DSN)
     try:
-        await conn.execute("CREATE DATABASE mcat_coach_test")
+        await conn.execute("CREATE DATABASE gradient_test")
     except asyncpg.exceptions.DuplicateDatabaseError:
         pass
     finally:

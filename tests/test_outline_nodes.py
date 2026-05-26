@@ -15,15 +15,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from app.models.outline import OUTLINE_PATH_DELIMITER, Course, OutlineNode
 
 _HOST_PORT = os.environ.get("HOST_POSTGRES_PORT", "5432")
-_DB_URL = f"postgresql+asyncpg://mcat:mcat_secret@localhost:{_HOST_PORT}/mcat_coach_test"
-_ADMIN_DSN = f"postgresql://mcat:mcat_secret@localhost:{_HOST_PORT}/mcat_coach"
+_DB_URL = f"postgresql+asyncpg://mcat:mcat_secret@localhost:{_HOST_PORT}/gradient_test"
+_ADMIN_DSN = f"postgresql://mcat:mcat_secret@localhost:{_HOST_PORT}/gradient"
 
 
 @pytest.fixture
 async def engine():
     conn = await asyncpg.connect(_ADMIN_DSN)
     try:
-        await conn.execute("CREATE DATABASE mcat_coach_test")
+        await conn.execute("CREATE DATABASE gradient_test")
     except asyncpg.exceptions.DuplicateDatabaseError:
         pass
     finally:

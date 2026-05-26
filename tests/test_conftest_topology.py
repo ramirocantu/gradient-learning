@@ -1,7 +1,7 @@
 """Regression tests for the unified-conftest fixture topology (Ticket R.2c).
 
 R.2c collapsed three per-suite conftest files into a single root conftest
-with one engine + one test DB (``mcat_coach_test``). These tests guard
+with one engine + one test DB (``gradient_test``). These tests guard
 against a sibling re-introducing a second engine or pointing a fixture at
 a different test database.
 """
@@ -31,18 +31,18 @@ def test_one_test_engine_per_session() -> None:
     )
 
 
-def test_test_engine_points_at_mcat_coach_test(test_engine) -> None:
-    """The session-scoped engine binds to ``mcat_coach_test`` exactly.
+def test_test_engine_points_at_gradient_test(test_engine) -> None:
+    """The session-scoped engine binds to ``gradient_test`` exactly.
 
     R.2c retired the per-suite orphan databases. A regression that re-binds
     the engine to a different test database (e.g. with a suite suffix) would
     surface here.
     """
     url = str(test_engine.url)
-    assert url.endswith("/mcat_coach_test"), (
-        f"test_engine URL should target mcat_coach_test; got {url!r}"
+    assert url.endswith("/gradient_test"), (
+        f"test_engine URL should target gradient_test; got {url!r}"
     )
     # No suite-suffixed test DBs survive the consolidation.
     suite_suffixes = ("_web_" + "dashboard", "_web_" + "viewer")
     for suffix in suite_suffixes:
-        assert ("mcat_coach_test" + suffix) not in url
+        assert ("gradient_test" + suffix) not in url

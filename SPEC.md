@@ -239,7 +239,7 @@ NOTION_API_TOKEN ; NOTION_WIKI_DB_ID    # ⊥ commit
 
 ## §T — tasks
 
-P0 — schema generalize + OpenAI pivot. Ids are monotonic, not positional: T12–T14 (dependent-module ports) are appended but run mid-phase. **Exec order (dependency-correct, I hand-drive — ⊥ `--next` id-order):** T1 → T2 → T3 → T12 → T13 → T14 → T4 → T5 → T6 → T7 → T8 → T9 → T10(gate) → T11. Schema/tags + ports land before the OpenAI pivot so the suite compiles; gate last. See FORMAT.md for `st` legend.
+P0 — schema generalize + OpenAI pivot. Ids are monotonic, not positional: T12–T14 (dependent-module ports) are appended but run mid-phase. **Exec order (dependency-correct, I hand-drive — ⊥ `--next` id-order):** T1 → T2 → T15 → T3 → T12 → T13 → T14 → T4 → T5 → T6 → T7 → T8 → T9 → T10(gate) → T11. (T15 = DB rename, independent housekeeping, runs now.) Schema/tags + ports land before the OpenAI pivot so the suite compiles; gate last. See FORMAT.md for `st` legend.
 
 | id | st | goal | cites |
 |-----|----|------|-------|
@@ -256,6 +256,7 @@ P0 — schema generalize + OpenAI pivot. Ids are monotonic, not positional: T12�
 | T11 | . | fix `README.md` `backend/` subdir reference (repo has no `backend/`) | §O |
 | T12 | . | port categorizer + outline resolution → `node_id`: `app/services/categorizer/outline_lookup.py` (resolve node by ` >> ` path, ⊥ section/cc/topic codes) + categorizer job + `app/api/v1/recommendations.py` | V-O1,V-T1,V-T2 |
 | T13 | . | port anki layer → `node_id`: `app/services/anki/{topic_resolver_worker,topic_resolver_batch,queries}.py` + assignment/review scope → node_id subtree rollup | V-O1,V-T1 |
+| T15 | x | rename DB `mcat_coach`→`gradient` (+ `mcat_coach_test`→`gradient_test`): docker-compose.yml, .env/.env.example, conftest + schema-test DSNs/db_names; role `mcat` unchanged; stand up fresh `gradient` via `alembic upgrade head` | §C,I.env |
 | T14 | . | port dashboard + read-services → `node_id`: `app/web/dashboard/services/*` (mastery, drilldown, sessions, anki_scope) + routes/questions + utils, `app/services/{analytics,recommender}.py`, `app/services/analyzer/*`, `app/services/tutor/*`; shared subtree-rollup helper (V-O1 set rollup) | V-O1,V-T1,V-E2 |
 
 ## §B — bug log

@@ -1,4 +1,4 @@
-"""T13 smoke — outline-free anki query helpers still work; stubs return empty."""
+"""Smoke — outline-free anki query helpers still work; FENCED helpers return empty."""
 
 import os
 from datetime import date, datetime, timedelta, timezone
@@ -15,11 +15,9 @@ from app.services.anki.queries import (
     due_count_for_subtree,
     get_anki_card_total,
     get_tag_parse_stats,
-    list_cards_for_cc,
     list_cards_for_qid,
     list_cards_for_topic,
     list_review_queue,
-    list_review_queue_for_cc,
     list_review_queue_for_topic_subtree,
 )
 
@@ -115,7 +113,11 @@ async def test_get_tag_parse_stats_groups_by_parsed_kind(engine):
     assert stats == {"resolved": 1}
 
 
-# ── stubbed subtree helpers — return empty pending T14 ──────────────────────
+# ── FENCED subtree helpers — return empty (T18, V-RB2) ─────────────────────
+# `list_cards_for_cc` + `list_review_queue_for_cc` excluded: their
+# parameter (`cc_code`) is legacy schema. V-RB4 forbids tests referencing
+# it. The remaining FENCED helpers still take a `topic_id` int kwarg —
+# kept until the node_id rename lands in the post-P0.5 port.
 
 
 async def test_subtree_helpers_return_empty(engine):
@@ -123,7 +125,5 @@ async def test_subtree_helpers_return_empty(engine):
     due = datetime.now(tz=timezone.utc) + timedelta(days=1)
     async with AsyncSession(engine) as s:
         assert await list_cards_for_topic(s, topic_id=1) == []
-        assert await list_cards_for_cc(s, cc_code="5E") == []
-        assert await list_review_queue_for_cc(s, cc_code="5E", due_before=due) == []
         assert await list_review_queue_for_topic_subtree(s, topic_id=1, due_before=due) == []
         assert await due_count_for_subtree(s, topic_id=1, due_before=due) == 0

@@ -613,80 +613,10 @@ async def test_sync_review_skips_unknown_card_id(
 
 
 # --- V43 (B9): sync must not delete non-regex tags ---
-
-
-async def test_sync_preserves_llm_aamc_topic_rows(
-    db_session: AsyncSession, lookup: OutlineLookup, make_client
-) -> None:
-    """§V43 / §B9 — sync's _replace_tags scopes its diff to source='regex'.
-
-    Setup: one card synced w/ a real AnKing AAMC tag (regex writes the
-    aamc_cc row), then we hand-insert an LLM-resolved aamc_topic row w/
-    synthetic tag_raw. Re-syncing the same incoming tag list must leave
-    the LLM row untouched even though its tag_raw never appears in the
-    AnkiConnect payload. Before T54 every sync wiped these rows.
-    """
-    from app.models.outline import ContentCategory, Topic
-
-    aamc_tag = (
-        "#AK_MCAT_v2::#AAMC::Concepts::C/P::Foundational_Concept_04::"
-        "4E-Atoms_Nuclear_Decay_Electronic_Structure_and_Atomic_Chemical_Behavior"
-    )
-    handler = _make_handler(
-        card_ids=[5101],
-        cards=[_card_data(card_id=5101, note_id=6101, queue=2, interval=21)],
-        notes=[_note_data(note_id=6101, tags=[aamc_tag])],
-    )
-    async with make_client(handler) as client:
-        await sync_deck(db_session, client, deck_name="MileDown", outline_lookup=lookup)
-
-    # Hand-insert an LLM aamc_topic row for this NOTE under CC 4E (mirrors
-    # what the T32 worker writes — synthetic tag_raw + source='llm').
-    cc_4e = (
-        await db_session.execute(select(ContentCategory).where(ContentCategory.code == "4E"))
-    ).scalar_one()
-    topic_under_4e = (
-        await db_session.execute(
-            select(Topic).where(Topic.content_category_id == cc_4e.id).limit(1)
-        )
-    ).scalar_one()
-    synthetic_raw = "__llm_topic__::v5-tags-plus-text-multi-topic::4E >> Atomic structure"
-    db_session.add(
-        AnkiNoteTag(
-            note_id=6101,
-            tag_raw=synthetic_raw,
-            topic_id=topic_under_4e.id,
-            parsed_kind="aamc_topic",
-            source="llm",
-            confidence=0.9,
-            rationale="seeded for test",
-            extractor_version="v5-tags-plus-text-multi-topic",
-        )
-    )
-    await db_session.flush()
-
-    # Re-sync w/ the same incoming tag list — the synthetic tag_raw is NOT
-    # in incoming, so pre-V43 sync deleted it. V43 keeps source='regex' as
-    # the only deletion scope.
-    async with make_client(handler) as client:
-        await sync_deck(db_session, client, deck_name="MileDown", outline_lookup=lookup)
-
-    surviving = (
-        (
-            await db_session.execute(
-                select(AnkiNoteTag).where(
-                    AnkiNoteTag.note_id == 6101,
-                    AnkiNoteTag.source == "llm",
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
-    assert len(surviving) == 1
-    assert surviving[0].tag_raw == synthetic_raw
-    assert surviving[0].parsed_kind == "aamc_topic"
-    assert surviving[0].topic_id == topic_under_4e.id
+# (T20: removed `test_sync_preserves_llm_aamc_topic_rows` — it seeded
+#  `Topic` + `ContentCategory` directly; both models are dropped. Re-coverage
+#  on the OutlineNode shape lands when T22/T26 ports the LLM aamc_topic
+#  writer onto `AnkiNoteTag.node_id`.)
 
 
 async def test_sync_preserves_manual_override_rows(

@@ -220,129 +220,13 @@ async def test_media_file_rejects_path_traversal(client, db_session):
     assert r.status_code == 404
 
 
-async def _seed_minimal_outline(session):
-    """Insert (or fetch) just enough outline rows for AAMC-tag rendering.
-
-    Outline tables aren't cleared between tests by the db_session fixture, so this
-    helper is idempotent — it reuses existing rows when present.
-    """
-    from sqlalchemy import select
-
-    from app.models.outline import ContentCategory, FoundationalConcept, Section, Topic
-
-    sec = (await session.execute(select(Section).where(Section.code == "CP"))).scalar_one_or_none()
-    if sec is None:
-        sec = Section(code="CP", name="Chem/Phys", position=0)
-        session.add(sec)
-        await session.flush()
-
-    fc = (
-        await session.execute(select(FoundationalConcept).where(FoundationalConcept.code == "FC4"))
-    ).scalar_one_or_none()
-    if fc is None:
-        fc = FoundationalConcept(section_id=sec.id, code="FC4", name="FC4", position=0)
-        session.add(fc)
-        await session.flush()
-
-    ccs: dict[str, ContentCategory] = {}
-    for code, name, pos in (("4A", "Motion & energy", 0), ("4B", "Fluids", 1)):
-        cc = (
-            await session.execute(select(ContentCategory).where(ContentCategory.code == code))
-        ).scalar_one_or_none()
-        if cc is None:
-            cc = ContentCategory(foundational_concept_id=fc.id, code=code, name=name, position=pos)
-            session.add(cc)
-            await session.flush()
-        ccs[code] = cc
-
-    work = (
-        await session.execute(
-            select(Topic).where(Topic.name == "Work", Topic.content_category_id == ccs["4A"].id)
-        )
-    ).scalar_one_or_none()
-    if work is None:
-        work = Topic(
-            content_category_id=ccs["4A"].id,
-            name="Work",
-            disciplines=["PHY"],
-            depth=0,
-            position=0,
-        )
-        session.add(work)
-        await session.flush()
-
-    return {"4A": ccs["4A"], "4B": ccs["4B"], "Work": work}
-
-
-async def test_capture_detail_renders_aamc_tags(client, db_session):
-    from app.models.captures import QuestionTag
-
-    outline = await _seed_minimal_outline(db_session)
-    q = await _add_question(db_session, "QID-AAMC")
-    db_session.add_all(
-        [
-            QuestionTag(
-                question_id=q.id,
-                topic_id=outline["Work"].id,
-                confidence=1.0,
-                source="uworld_map",
-            ),
-            QuestionTag(
-                question_id=q.id,
-                content_category_id=outline["4B"].id,
-                confidence=1.0,
-                source="uworld_map",
-            ),
-            QuestionTag(
-                question_id=q.id,
-                skill=2,
-                confidence=1.0,
-                source="uworld_map",
-            ),
-        ]
-    )
-    await db_session.commit()
-
-    r = await client.get(f"/viewer/captures/{q.id}")
-    assert r.status_code == 200
-    body = r.text
-    assert "AAMC tags" in body
-    assert "Work" in body  # topic name
-    assert "4A" in body  # CC code on the topic chip
-    assert "4B" in body  # plain CC chip
-    assert "Skill 2" in body
-    assert "uworld_map" in body
-
-
-async def test_captures_list_renders_aamc_summary_chips(client, db_session):
-    from app.models.captures import QuestionTag
-
-    outline = await _seed_minimal_outline(db_session)
-    q = await _add_question(db_session, "QID-CHIP")
-    db_session.add_all(
-        [
-            QuestionTag(
-                question_id=q.id,
-                content_category_id=outline["4A"].id,
-                confidence=1.0,
-                source="uworld_map",
-            ),
-            QuestionTag(
-                question_id=q.id,
-                skill=3,
-                confidence=1.0,
-                source="uworld_map",
-            ),
-        ]
-    )
-    await db_session.commit()
-
-    r = await client.get("/viewer/captures")
-    assert r.status_code == 200
-    body = r.text
-    assert "QID-CHIP" in body
-    assert ">4A<" in body
-    assert ">S3<" in body
+# (T20: removed `_seed_minimal_outline` + `test_capture_detail_renders_aamc_tags`
+#  + `test_captures_list_renders_aamc_summary_chips` — all three seeded
+#  `Section`/`FoundationalConcept`/`ContentCategory`/`Topic` and the
+#  3-target `QuestionTag(topic_id|content_category_id|skill)` shape. Both
+#  the outline tables and the 3-target columns are dropped (T1/T2).
+#  Re-coverage of AAMC chip rendering on `OutlineNode` + `node_id` tags
+#  lands when the viewer is reworked alongside T34.)
 
 
 async def test_version_endpoint_returns_iso_and_advances_on_write(client, db_session):

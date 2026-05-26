@@ -1,106 +1,92 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import ForeignKey, Index, Integer, Text, UniqueConstraint
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy import (
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
-
-class Section(Base):
-    __tablename__ = "sections"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    code: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
-    name: Mapped[str] = mapped_column(Text, nullable=False)
-    position: Mapped[int] = mapped_column(Integer, nullable=False)
-
-    foundational_concepts: Mapped[list[FoundationalConcept]] = relationship(
-        back_populates="section", cascade="all, delete-orphan"
-    )
+# V-O4: reserved node-path delimiter — ASCII; renderer + parser must agree.
+# ` >> ` over ` / ` (collides with ÷ in physics-formula node names). The
+# schema importer (T9) rejects any node name containing this substring.
+OUTLINE_PATH_DELIMITER = " >> "
 
 
-class FoundationalConcept(Base):
-    __tablename__ = "foundational_concepts"
+class Course(Base):
+    """A study domain (a course: biochem, anatomy, …).
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    section_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("sections.id", ondelete="CASCADE"), nullable=False
-    )
-    code: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
-    name: Mapped[str] = mapped_column(Text, nullable=False)
-    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    Adding a course + importing an outline schema materializes its
+    `outline_nodes` tree. Domain-blind core (SPEC §A); MCAT/AAMC is just one
+    uploaded schema (V-O3), not privileged.
+    """
 
-    section: Mapped[Section] = relationship(back_populates="foundational_concepts")
-    content_categories: Mapped[list[ContentCategory]] = relationship(
-        back_populates="foundational_concept", cascade="all, delete-orphan"
-    )
-
-
-class ContentCategory(Base):
-    __tablename__ = "content_categories"
+    __tablename__ = "courses"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    foundational_concept_id: Mapped[int] = mapped_column(
-        Integer,
-        ForeignKey("foundational_concepts.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    code: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    slug: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    position: Mapped[int] = mapped_column(Integer, nullable=False)
-
-    foundational_concept: Mapped[FoundationalConcept] = relationship(
-        back_populates="content_categories"
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
-    topics: Mapped[list[Topic]] = relationship(
-        back_populates="content_category",
-        foreign_keys="[Topic.content_category_id]",
-        cascade="all, delete-orphan",
+
+    nodes: Mapped[list[OutlineNode]] = relationship(
+        back_populates="course", cascade="all, delete-orphan"
     )
 
 
-class Topic(Base):
-    __tablename__ = "topics"
+class OutlineNode(Base):
+    """Sole outline hierarchy (V-O1). Recursive tree, arbitrary depth.
+
+    The per-course `kind` label says what a level means (section|unit|lecture|
+    concept|…). AAMC is one course expressed as a 4-deep instance
+    (section→fc→cc→topic as `kind` values), ⊥ dedicated tables. Rollup is
+    subtree membership (a set, not a sum): each item lives once at its most
+    specific node; a parent's set = union of descendants' + own direct items.
+    """
+
+    __tablename__ = "outline_nodes"
     __table_args__ = (
         UniqueConstraint(
-            "content_category_id",
-            "parent_topic_id",
-            "name",
-            name="uq_topic_cc_parent_name",
+            "course_id", "parent_id", "name", name="uq_outline_nodes_course_parent_name"
         ),
-        Index("ix_topic_content_category_id", "content_category_id"),
-        Index("ix_topic_parent_topic_id", "parent_topic_id"),
+        Index("ix_outline_nodes_course_id", "course_id"),
+        Index("ix_outline_nodes_parent_id", "parent_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    content_category_id: Mapped[int] = mapped_column(
-        Integer,
-        ForeignKey("content_categories.id", ondelete="RESTRICT"),
-        nullable=False,
+    course_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("courses.id", ondelete="CASCADE"), nullable=False
     )
-    parent_topic_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("topics.id", ondelete="SET NULL"), nullable=True
+    parent_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("outline_nodes.id", ondelete="CASCADE"), nullable=True
     )
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
-    disciplines: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, server_default="{}")
     depth: Mapped[int] = mapped_column(Integer, nullable=False)
     position: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
-    content_category: Mapped[ContentCategory] = relationship(
-        back_populates="topics", foreign_keys=lambda: [Topic.content_category_id]
-    )
-    parent: Mapped[Optional[Topic]] = relationship(
-        "Topic",
+    course: Mapped[Course] = relationship(back_populates="nodes")
+    parent: Mapped[Optional[OutlineNode]] = relationship(
+        "OutlineNode",
         back_populates="children",
-        foreign_keys=lambda: [Topic.parent_topic_id],
-        remote_side=lambda: [Topic.id],
+        remote_side=lambda: [OutlineNode.id],
     )
-    children: Mapped[list[Topic]] = relationship(
-        "Topic",
+    children: Mapped[list[OutlineNode]] = relationship(
+        "OutlineNode",
         back_populates="parent",
-        foreign_keys=lambda: [Topic.parent_topic_id],
+        cascade="all, delete-orphan",
     )

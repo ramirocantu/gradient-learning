@@ -18,7 +18,7 @@ from app.models.captures import (
 from app.models.features import QuestionFeatures
 from app.models.llm_batch import LlmBatchRun
 from app.models.media import Media
-from app.models.outline import ContentCategory, FoundationalConcept, Section, Topic
+from app.models.outline import Course, OutlineNode
 from app.models.task_run import TaskRun, TaskRunStatus
 
 __all__ = [
@@ -31,17 +31,15 @@ __all__ = [
     "AnkiWrite",
     "Attempt",
     "AttemptNote",
-    "ContentCategory",
-    "FoundationalConcept",
+    "Course",
     "LlmBatchRun",
     "Media",
+    "OutlineNode",
     "Passage",
     "Question",
     "QuestionFeatures",
     "QuestionTag",
     "RawCapture",
-    "Section",
     "TaskRun",
     "TaskRunStatus",
-    "Topic",
 ]

@@ -95,6 +95,15 @@ class Settings(BaseSettings):
     # scheduled for "today" fires within ~1h of due time.
     ANKI_REVIEW_PUSH_INTERVAL_MINUTES: int = 60
 
+    # P2 KB substrate (V-KB2, §I.env). PDF inbox = local directory the
+    # ingest poller watches; Notion vars carry the write-out target
+    # (V-N1: one-way mirror only). Tokens are optional at boot — only
+    # required when the matching service runs. `validate_kb_config`
+    # (app/kb_config.py) logs WARN for missing optionals at startup.
+    PDF_INBOX_DIR: Path = _BACKEND_ROOT / "data" / "pdf_inbox"
+    NOTION_API_TOKEN: str | None = None
+    NOTION_WIKI_DB_ID: str | None = None
+
 
 settings = Settings()
 

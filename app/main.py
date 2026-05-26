@@ -23,6 +23,8 @@ from app.api.v1.captures import router as captures_router
 from app.api.v1.outline import router as outline_router
 # from app.api.v1.recommendations import router as recommendations_router
 from app.api.v1.tutor import router as tutor_router
+from app.config import settings
+from app.kb_config import validate_kb_config
 from app.scheduler import start_scheduler, stop_scheduler
 from app.web.dashboard.main import app as dashboard_app
 from app.web.media import router as media_router
@@ -31,6 +33,10 @@ from app.web.viewer.main import app as viewer_app
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # T25 / V-KB2: validate P2 KB substrate env at startup. Missing
+    # optional values WARN-log but do not block boot — the matching
+    # service raises on first use if its var is unset.
+    validate_kb_config(settings)
     start_scheduler()
     yield
     stop_scheduler()

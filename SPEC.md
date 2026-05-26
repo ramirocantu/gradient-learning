@@ -29,7 +29,8 @@ Architecture = **core + periphery**. The core is domain-blind. Everything MCAT-s
 - Anki sync/retention/assignment layer (AnkiConnect protocol).
 - Notion writer (write-out + pointer index; no read-back).
 - LLM tagging engine (OpenAI, behind `services/llm/`).
-- MCP data + persist tools; dashboard.
+- MCP data + persist tools.
+- JSON API (`/api/v1/*`) = the dashboard's sole data seam. Dashboard is a **client**, not core: P0 = server-rendered Jinja, P1 = React+Tailwind SPA (T16) over the same API. Swapping the view layer ⊥ touch core; the API contract is the boundary.
 
 **PLUGINS (periphery, registry-keyed):**
 - **Source adapters** — `capture → normalized {Question, Attempt}`, keyed by `source`. UWorld = reference adapter. Also: generic web-Qbank (extension), manual entry, PDF question-set parser.
@@ -42,8 +43,9 @@ Seam = the normalized internal model + adapter registries keyed on `source` / `c
 ## §C — constraints
 
 - Single user. Local-first **except Notion write-out** (sole cloud egress for storage) + **OpenAI API** (LLM + embeddings). Backend + Postgres stay local. ⊥ multi-user.
-- Stack: Py 3.12 / FastAPI / SQLAlchemy async / Postgres 16 (asyncpg) / **OpenAI SDK** / APScheduler / Jinja dashboard. Extension TS + MV3 (separate repo). Adds: pgvector (`vector` ext via SQLAlchemy), `notion-client`, PyMuPDF/pdfplumber.
-- ⊥ new framework, ORM, queue, frontend stack. ⊥ a new ORM for pgvector — use existing SQLAlchemy.
+- Stack: Py 3.12 / FastAPI / SQLAlchemy async / Postgres 16 (asyncpg) / **OpenAI SDK** / APScheduler. Dashboard frontend = Jinja today → P1 migrates to a JS SPA (see frontend-stack carve-out below). Extension TS + MV3 (separate repo). Adds: pgvector (`vector` ext via SQLAlchemy), `notion-client`, PyMuPDF/pdfplumber.
+- ⊥ new **backend** framework, ORM, queue. ⊥ a new ORM for pgvector — use existing SQLAlchemy.
+- **Frontend-stack carve-out (amended 2026-05-26):** dashboard MAY adopt a JS framework (React + Tailwind) built via the `frontend-design` plugin. Backend stays FastAPI serving JSON; SPA consumes existing `/api/v1/*`. ⊥ new backend stack still holds; ⊥ the SPA reaching past the JSON API (no server-side render coupling).
 - **LLM = OpenAI, single provider, behind `services/llm/`.** No local model required (vLLM dropped — logprobs are cloud-side). `OPENAI_BASE_URL` left configurable so an OpenAI-compatible local server can slot in later without code change.
 - LLM use mirrors the proven pattern: content-hash cache + `extractor_version` + token-cost log + structured output. Anthropic-specific cache markers retired (OpenAI caching is automatic — see V38/V42).
 - **Calibration** (LLM4Tag confidence) uses OpenAI logprobs. The calibrator model **must support `logprobs`** — i.e. a standard chat model (GPT-4o/4.1-class), **not** an o-series reasoning model. Tagging may use any model.
@@ -223,10 +225,13 @@ NOTION_API_TOKEN ; NOTION_WIKI_DB_ID    # ⊥ commit
 - V-M1: MCP tools = data exposure + persist only; ⊥ verdicts/heuristics in signatures. Socratic reasoning host-side; `write_discriminator_factor` persists (Postgres + Notion block + back-link).
 - V-M2: AI ⊥ generate primary active-recall questions or flashcards (cognitive-safety hard rule).
 
+**Dashboard / API seam**
+- V-D1: dashboard is a client over the public JSON API (`/api/v1/*`) — its sole data seam. ⊥ dashboard-only backend endpoints; a view needing new data extends the public API, ⊥ a private route. View-layer swap (Jinja → SPA, T16) ⊥ touch core. The API contract is the boundary (carries §A).
+
 ## §P — phases
 
 - **P0 — schema generalize + OpenAI pivot (≈wk1).** Collapse `Section/FC/CC/Topic` → `Course` + `outline_nodes`; retarget tags to `node_id`; open `source` enum on captures; swap `anthropic`→`openai` SDK across extractors; retire V38, rework V45, amend V41/V16/V69. Reseed AAMC as an uploaded schema. **Gate: V-L2 measurement harness green** (tagging quality vs Claude baseline). No new UX; unblocks all.
-- **P1 — day-1 usable (≈wk2–3).** Outline-schema import endpoint + prompt template + validate/materialize. Anki sync/linking on the real course (reuse). → tag your real Anki deck to your real course. Both reuse-heavy, immediate value.
+- **P1 — day-1 usable (≈wk2–3).** Outline-schema import endpoint + prompt template + validate/materialize. Anki sync/linking on the real course (reuse). → tag your real Anki deck to your real course. Both reuse-heavy, immediate value. **Dashboard redesign (T16):** whole `app/web/dashboard/` rebuilt as a React+Tailwind SPA via the `frontend-design` plugin, consuming existing `/api/v1/*` JSON; replaces Jinja. Plugin use: invoke the `frontend-design` skill per view, feed it the JSON contract + the current Jinja view as reference, iterate to a production-grade, non-generic aesthetic. Runs after T14 (read-services ported to `node_id`).
 - **P2 — notes → atomic facts → Notion (early semester).** PDF ingest poller → grounded atomic facts → embed + tag → one Notion page per concept + pointer/back-links. Vector recall online.
 - **P3 — practice questions.** Source adapters: web-Qbank (extension) → manual entry → PDF-qset parser (hardest, last). Dashboard performance + resource links per node.
 - **P4 — Socratic MCP.** MCP tools over the data; `write_discriminator_factor`; host-side dialogue. Dashboard chat only if the MCP-host workflow proves clunky.
@@ -239,7 +244,7 @@ NOTION_API_TOKEN ; NOTION_WIKI_DB_ID    # ⊥ commit
 
 ## §T — tasks
 
-P0 — schema generalize + OpenAI pivot. Ids are monotonic, not positional: T12–T14 (dependent-module ports) are appended but run mid-phase. **Exec order (dependency-correct, I hand-drive — ⊥ `--next` id-order):** T1 → T2 → T15 → T3 → T12 → T13 → T14 → T4 → T5 → T6 → T7 → T8 → T9 → T10(gate) → T11. (T15 = DB rename, independent housekeeping, runs now.) Schema/tags + ports land before the OpenAI pivot so the suite compiles; gate last. See FORMAT.md for `st` legend.
+P0 — schema generalize + OpenAI pivot. Ids are monotonic, not positional: T12–T14 (dependent-module ports) are appended but run mid-phase. **Exec order (dependency-correct, I hand-drive — ⊥ `--next` id-order):** T1 → T2 → T15 → T3 → T12 → T13 → T14 → T4 → T5 → T6 → T7 → T8 → T9 → T10(gate) → T11. (T15 = DB rename, independent housekeeping, runs now.) Schema/tags + ports land before the OpenAI pivot so the suite compiles; gate last. **T16 = P1** (dashboard redesign), runs after T14 — listed here for monotonic id, not P0 exec order. See FORMAT.md for `st` legend.
 
 | id | st | goal | cites |
 |-----|----|------|-------|
@@ -258,6 +263,7 @@ P0 — schema generalize + OpenAI pivot. Ids are monotonic, not positional: T12�
 | T13 | . | port anki layer → `node_id`: `app/services/anki/{topic_resolver_worker,topic_resolver_batch,queries}.py` + assignment/review scope → node_id subtree rollup | V-O1,V-T1 |
 | T15 | x | rename DB `mcat_coach`→`gradient` (+ `mcat_coach_test`→`gradient_test`): docker-compose.yml, .env/.env.example, conftest + schema-test DSNs/db_names; role `mcat` unchanged; stand up fresh `gradient` via `alembic upgrade head` | §C,I.env |
 | T14 | . | port dashboard + read-services → `node_id`: `app/web/dashboard/services/*` (mastery, drilldown, sessions, anki_scope) + routes/questions + utils, `app/services/{analytics,recommender}.py`, `app/services/analyzer/*`, `app/services/tutor/*`; shared subtree-rollup helper (V-O1 set rollup) | V-O1,V-T1,V-E2 |
+| T16 | . | (P1, after T14) redesign whole dashboard via `frontend-design` plugin → React+Tailwind SPA over existing `/api/v1/*` JSON (mastery, node drilldown, sessions, anki-scope, outline-import view); replaces Jinja `app/web/dashboard/`; backend stays FastAPI serving JSON; invoke `frontend-design` skill per view (feed JSON contract + current Jinja view as ref); node rollup = subtree set (V-O1) | §C,I.api,V-O1,V-D1 |
 
 ## §B — bug log
 

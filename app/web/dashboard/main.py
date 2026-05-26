@@ -1,3 +1,18 @@
+"""Dashboard sub-app (Jinja thin client).
+
+V-D1 contract:
+- Dashboard is a *client* over the public `/api/v1/*` JSON API — that
+  surface is the sole data seam, and the boundary the future SPA
+  (T34 reassessment) will swap in over.
+- This sub-app mounts only HTML-rendering routers. ⊥ JSON routes here;
+  ⊥ a dashboard-only backend endpoint (extend `/api/v1/*` instead).
+- Route handlers may call public-API view functions in-process (e.g.
+  `from app.api.v1.admin import list_jobs_payload`) — same contract,
+  no httpx loopback overhead. New data needs land in `/api/v1/*` first.
+
+Structural enforcement lives in `tests/test_v_d1_dashboard_seam.py`.
+"""
+
 from pathlib import Path
 
 import markdown as md_lib

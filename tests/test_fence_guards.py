@@ -130,16 +130,28 @@ def test_api_routers_for_fenced_surfaces_unmounted():
     assert not bad, f"FENCED API routes still mounted: {bad}"
 
 
-def test_tutor_outline_routes_disabled():
-    """Tutor outline endpoints (search_topics + get_aamc_outline) are
-    commented out in `app/api/v1/tutor.py`."""
+def test_tutor_outline_node_routes_mounted():
+    """T22 unfenced the tutor outline surface onto OutlineNode (V-O1/V-O3).
+
+    The legacy AAMC-shaped routes (`/outline/topics/search`, `/outline`) are
+    replaced by domain-blind node-keyed routes; they must be live on the
+    public API. The legacy decorators must no longer appear in the source
+    (commented or otherwise) so that we don't drift back into the
+    AAMC-only shape.
+    """
+    paths = {route.path for route in main_mod.app.routes}
+    expected = {
+        "/api/v1/tutor/outline/nodes/search",
+        "/api/v1/tutor/outline",
+        "/api/v1/tutor/outline/nodes/{node_id}/subtree",
+    }
+    missing = expected - paths
+    assert not missing, f"T22 tutor outline node routes not mounted: {sorted(missing)}"
+
     src = inspect.getsource(tutor_api_mod)
-    # The decorators for the two FENCED routes must be inside comments.
-    assert re.search(r"#\s*@router\.get\(\"/outline/topics/search\"\)", src), (
-        "tutor /outline/topics/search route should be commented out (FENCED)"
-    )
-    assert re.search(r"#\s*@router\.get\(\"/outline\"\)", src), (
-        "tutor /outline route should be commented out (FENCED)"
+    assert "/outline/topics/search" not in src, (
+        "legacy `/outline/topics/search` decorator string should be removed "
+        "(T22 replaced with `/outline/nodes/search`)"
     )
 
 

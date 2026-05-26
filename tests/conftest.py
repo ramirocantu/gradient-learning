@@ -12,21 +12,11 @@ import app.models  # noqa: F401  — registers all models on Base.metadata
 from app.database import Base
 
 
-# T20 (V-RB4): the previous collect_ignore_glob covered legacy-schema
-# test modules left over from T17/T18 fences. Those files have all been
-# deleted, so no glob is needed. New collect-ignores should re-introduce
-# this list only when a FENCED-but-undeletable surface appears.
-#
-# T26 follow-up: `tests/test_eval_script.py` covers
-# `scripts/eval_categorizer_models.py`, which still imports `anthropic`
-# at module top-level. The OpenAI pivot (T4) dropped `anthropic` from
-# `pyproject.toml`, but the eval script was a one-shot V-L2 harness
-# (T10 already passed) and was never ported. After `uv sync` removed
-# the residual `anthropic` install, pytest can no longer COLLECT this
-# test (ImportError aborts the whole suite before the per-test failure
-# we'd otherwise see). Ignore the module until the script is either
-# ported to the OpenAI SDK or deleted as P0 residue.
-collect_ignore_glob = ["test_eval_script.py"]
+# T36 (V-RB5): the previous collect_ignore_glob workaround for
+# tests/test_eval_script.py was removed once T36 deleted the test
+# along with the 7 stale anthropic harness scripts in scripts/.
+# New collect-ignores should re-introduce this list only when a
+# FENCED-but-undeletable surface appears.
 
 _HOST_PORT = os.environ.get("HOST_POSTGRES_PORT", "5432")
 TEST_DB_URL = f"postgresql+asyncpg://gradient:gradient_secret@localhost:{_HOST_PORT}/gradient_test"

@@ -241,6 +241,7 @@ NOTION_API_TOKEN ; NOTION_WIKI_DB_ID    # ⊥ commit
 - V-RB2: `app/services/anki/{queries,state,retention}.py` contain zero references to `topic_id`, `cc_code`, `topics`, `content_categories` — or surface fenced out of critical path.
 - V-RB3: `app/startup.py` ⊥ call `scripts/seed_outline.py`; startup behavior reconciled with `app/api/v1/outline.py` import flow (no implicit seed; explicit upload required).
 - V-RB4: legacy tests referencing `Topic` / `ContentCategory` / `cc_code` rewritten to OutlineNode + subtree rollup, or removed if testing pruned surfaces.
+- V-RB5: post-pivot (T4), ⊥ `from anthropic` / `import anthropic` anywhere in `app/` or `scripts/`. OpenAI is the single LLM provider (§C, V16). Legacy harness/eval scripts in `scripts/` (e.g. `eval_categorizer_models.py`, `compare_categorizer_v5_baseline.py`, `extract_features*.py`, `compare_topic_resolver_v3_v4.py`, `run_categorizer.py`, `run_anki_topic_resolver_batch.py`) must be ported to the OpenAI SDK or deleted; their associated tests follow. Recurrence trap: `uv sync` cleans a transient `anthropic` install → suite collection-errors at the next `from anthropic` import. See B2.
 
 **Knowledge-base substrate (P2 gate)**
 - V-KB1: P2 substrate (`pdf_sources`, `atomic_facts`, `content_embeddings`, `concept_edges`, `notion_pages`) ships with SQLAlchemy models + Alembic migrations + idempotent re-run tests **before** any P3 retrieval / grounded-generation work lands. New service seams (PDF ingest/parse, embedding write, similarity-edge derivation, Notion write-out) live under `app/services/` with mocked-SDK contract tests.
@@ -251,6 +252,9 @@ NOTION_API_TOKEN ; NOTION_WIKI_DB_ID    # ⊥ commit
 
 **MCP write-back**
 - V-M3: discriminator writes via tutor/MCP seam append-only. ⊥ duplicate prior notes (dedupe by `(question_id, factor_text)` hash); question ↔ factor links preserved across re-writes. Notion mirror update (V-N1, V-N2) idempotent — block append, ⊥ page rewrite.
+
+**Alembic migrations**
+- V-MIG1: any alembic migration that introduces a named ENUM TYPE (via `sa.Enum(..., name=...)` or `postgresql.ENUM(..., name=...)` inside `op.create_table`) MUST issue `op.execute("DROP TYPE IF EXISTS <name>")` in the downgrade after the matching `op.drop_table()`. Postgres dialect auto-creates the TYPE on first CREATE TABLE; `DROP TABLE` leaves it orphaned. Subsequent `upgrade head` after `downgrade base` then hits `DuplicateObjectError: type "<name>" already exists`. Safer alternative: declare with `postgresql.ENUM(..., create_type=False)` and manage TYPE DDL explicitly via `op.execute("CREATE TYPE ...")` / `op.execute("DROP TYPE ...")` symmetrically in `upgrade()` / `downgrade()`. See B1.
 
 ## §P — phases
 
@@ -312,9 +316,12 @@ P0 — schema generalize + OpenAI pivot. Ids are monotonic, not positional: T12�
 | T33 | . | (P4) expand source adapters under `app/services/adapters/`: manual entry → web-Qbank (extension) → PDF question-set parser (hardest, last); only after write-back stable | I.captures,§A |
 | T34 | . | (P4) reassess T16 SPA redesign: if stabilized `/api/v1/*` contracts (node-based reads + KB substrate + write-back) justify, invoke `frontend-design` plugin per view and flip T16 to `~`; otherwise prune T16 | V-D1,§A |
 | T35 | x | (P0.5) rewrite per-extractor tests (`test_categorizer_llm`, `test_anki_topic_resolver`, `test_feature_extractor`, `test_synthesizer`, `test_analyzer_endpoint`, `test_scheduler`, `tests/web/dashboard/test_insights`) onto OpenAI SDK boundary via `tests/_openai_mocks.py`; drop V38 `cache_control` asserts; `ToolUseBlock` isinstance → `response_format` json_schema content reads; mark `tests/test_llm_batch.py` skip-all (batch retired in T4); T4 follow-up the smoke test stood in for | V16,V38,V45 |
+| T36 | x | (P0.5 follow-up) port-or-delete the 7 stale anthropic harness scripts in `scripts/` (`eval_categorizer_models.py`, `compare_categorizer_v5_baseline.py`, `extract_features.py`, `extract_features_sample.py`, `compare_topic_resolver_v3_v4.py`, `run_categorizer.py`, `run_anki_topic_resolver_batch.py`); drop `tests/test_eval_script.py` + `tests/conftest.py` `collect_ignore_glob` workaround once the importer is gone | V-RB5,V16,§C |
 
 ## §B — bug log
 
 | id | date | cause | fix |
 |-----|------|-------|-----|
+| B1 | 2026-05-26 | alembic 0001_initial.py declared `task_runs.status` as `sa.Enum('running','succeeded','failed', name='task_run_status')` inside `op.create_table`. Postgres dialect auto-created the named TYPE on first CREATE TABLE, but the downgrade only called `drop_table('task_runs')` — the TYPE leaked. Re-running `upgrade head` after `downgrade base` then hit `DuplicateObjectError: type "task_run_status" already exists`. Surfaced by T27's full-roundtrip migration test; also explained the pre-existing failure of `test_question_features_schema::test_migration_apply_and_rollback`. | Added `op.execute("DROP TYPE IF EXISTS task_run_status")` in 0001_initial.py downgrade after `drop_table('task_runs')`. Recurrence guarded by V-MIG1. |
+| B2 | 2026-05-26 | T4 swapped `anthropic`→`openai` across `app/services/llm/` but left 7 harness/eval scripts in `scripts/` (`eval_categorizer_models.py`, `compare_categorizer_v5_baseline.py`, `extract_features.py`, `extract_features_sample.py`, `compare_topic_resolver_v3_v4.py`, `run_categorizer.py`, `run_anki_topic_resolver_batch.py`) with `from anthropic import AsyncAnthropic` at module top-level — they survived as residual P0 debt because `anthropic` lingered in the venv from pre-pivot installs. T26's `uv sync` (triggered by T25 deps) trimmed that transient install; `tests/test_eval_script.py` then collection-errored with `ModuleNotFoundError: No module named 'anthropic'`, aborting the whole suite before any test ran. | Short-term: T26 added `collect_ignore_glob = ["test_eval_script.py"]` in `tests/conftest.py` to restore collection. Long-term: T36 ports or deletes the 7 scripts + their test + removes the collect_ignore_glob workaround. Recurrence guarded by V-RB5. |
 

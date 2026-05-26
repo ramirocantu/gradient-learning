@@ -83,8 +83,17 @@ BASE_REF="${BASE_REF:-$DEFAULT_BASE_BRANCH}"
 # --- Create worktree ---
 mkdir -p "$(dirname "$WT_DIR")"
 
+# Resume: if the path is already a valid git worktree, reuse it as-is and
+# short-circuit. File copy / DB create / migrations ran on first creation;
+# re-running them is wasteful and risks clobbering local state. This mirrors
+# `claude -w <name>` resume semantics when the worktree already exists.
 if [ -d "$WT_DIR" ]; then
-  die "worktree dir already exists: $WT_DIR (run worktree-remove.sh first)"
+  if (cd "$WT_DIR" && git rev-parse --is-inside-work-tree >/dev/null 2>&1); then
+    log "resuming existing worktree: $WT_DIR"
+    echo "$WT_DIR"
+    exit 0
+  fi
+  die "worktree dir exists but is not a git worktree: $WT_DIR (run worktree-remove.sh first)"
 fi
 
 if (cd "$MAIN" && git show-ref --verify --quiet "refs/heads/$BRANCH_NAME" 2>/dev/null); then

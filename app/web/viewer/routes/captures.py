@@ -11,13 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     Attempt,
-    ContentCategory,
     Media,
     Passage,
     Question,
     QuestionTag,
     RawCapture,
-    Topic,
 )
 from app.web.dashboard.services.html_rewriter import rewrite_media_refs
 from app.web.viewer.db import get_session
@@ -52,59 +50,33 @@ def _taxonomy_kv(tags: list[str] | None) -> list[tuple[str, str]]:
 
 
 async def _aamc_summaries_for_qids(session: AsyncSession, qids: list[int]) -> dict[int, list[str]]:
-    """Compact AAMC labels per question for the list view (e.g. ['4A', '5D / Work', 'S2'])."""
+    """Compact AAMC labels per question for the list view.
+
+    T14 partial port: the topic→CC→section label chain joined dropped tables.
+    Returns a node_id-based summary (e.g. ['node#42']) until OutlineLookup
+    resolves each node_id → path label.
+    """
     if not qids:
         return {}
     rows = (
         await session.execute(
-            select(
-                QuestionTag.question_id,
-                QuestionTag.topic_id,
-                QuestionTag.content_category_id,
-                QuestionTag.skill,
-            ).where(QuestionTag.question_id.in_(qids))
+            select(QuestionTag.question_id, QuestionTag.node_id).where(
+                QuestionTag.question_id.in_(qids)
+            )
         )
     ).all()
-    if not rows:
-        return {}
-
-    topic_ids = {r.topic_id for r in rows if r.topic_id is not None}
-    cc_ids = {r.content_category_id for r in rows if r.content_category_id is not None}
-
-    topics: dict[int, Topic] = {}
-    if topic_ids:
-        topics = {
-            t.id: t
-            for t in (await session.execute(select(Topic).where(Topic.id.in_(topic_ids)))).scalars()
-        }
-        cc_ids |= {t.content_category_id for t in topics.values()}
-
-    cc_codes: dict[int, str] = {}
-    if cc_ids:
-        cc_codes = {
-            cc.id: cc.code
-            for cc in (
-                await session.execute(select(ContentCategory).where(ContentCategory.id.in_(cc_ids)))
-            ).scalars()
-        }
-
     by_qid: dict[int, list[str]] = {}
-    for qid, topic_id, cc_id, skill in rows:
-        bucket = by_qid.setdefault(qid, [])
-        if topic_id is not None:
-            topic = topics.get(topic_id)
-            if topic is not None:
-                cc_code = cc_codes.get(topic.content_category_id, "?")
-                bucket.append(f"{cc_code} / {topic.name}")
-        elif cc_id is not None:
-            bucket.append(cc_codes.get(cc_id, "?"))
-        elif skill is not None:
-            bucket.append(f"S{skill}")
+    for qid, node_id in rows:
+        by_qid.setdefault(qid, []).append(f"node#{node_id}")
     return by_qid
 
 
 async def _aamc_tags_for_question(session: AsyncSession, question_id: int) -> list[dict[str, Any]]:
-    """Full QuestionTag rendering for the detail view (one entry per row)."""
+    """Full QuestionTag rendering for the detail view.
+
+    T14 partial port: surfaces canonical node_id rows; the path/CC label
+    resolution via OutlineLookup is a follow-up.
+    """
     tag_rows = (
         (
             await session.execute(
@@ -116,60 +88,22 @@ async def _aamc_tags_for_question(session: AsyncSession, question_id: int) -> li
         .scalars()
         .all()
     )
-    if not tag_rows:
-        return []
-
-    topic_ids = {t.topic_id for t in tag_rows if t.topic_id is not None}
-    cc_ids = {t.content_category_id for t in tag_rows if t.content_category_id is not None}
-
-    topics: dict[int, Topic] = {}
-    if topic_ids:
-        topics = {
-            t.id: t
-            for t in (await session.execute(select(Topic).where(Topic.id.in_(topic_ids)))).scalars()
-        }
-        cc_ids |= {t.content_category_id for t in topics.values()}
-
-    ccs: dict[int, ContentCategory] = {}
-    if cc_ids:
-        ccs = {
-            cc.id: cc
-            for cc in (
-                await session.execute(select(ContentCategory).where(ContentCategory.id.in_(cc_ids)))
-            ).scalars()
-        }
-
     out: list[dict[str, Any]] = []
     for t in tag_rows:
-        entry: dict[str, Any] = {
-            "tag_id": t.id,
-            "source": t.source,
-            "confidence": float(t.confidence),
-            "rationale": t.rationale,
-            "extractor_version": t.extractor_version,
-        }
-        if t.topic_id is not None:
-            topic = topics.get(t.topic_id)
-            cc = ccs.get(topic.content_category_id) if topic else None
-            entry["kind"] = "topic"
-            entry["cc_code"] = cc.code if cc else None
-            entry["cc_name"] = cc.name if cc else None
-            entry["label"] = topic.name if topic else f"topic#{t.topic_id}"
-        elif t.content_category_id is not None:
-            cc = ccs.get(t.content_category_id)
-            entry["kind"] = "content_category"
-            entry["cc_code"] = cc.code if cc else None
-            entry["cc_name"] = cc.name if cc else None
-            entry["label"] = cc.name if cc else f"cc#{t.content_category_id}"
-        elif t.skill is not None:
-            entry["kind"] = "skill"
-            entry["cc_code"] = None
-            entry["cc_name"] = None
-            entry["label"] = f"Skill {t.skill}"
-        else:
-            entry["kind"] = "unknown"
-            entry["label"] = "(no target)"
-        out.append(entry)
+        out.append(
+            {
+                "tag_id": t.id,
+                "source": t.source,
+                "confidence": float(t.confidence) if t.confidence is not None else None,
+                "rationale": t.rationale,
+                "extractor_version": t.extractor_version,
+                "kind": "node",
+                "cc_code": None,
+                "cc_name": None,
+                "node_id": t.node_id,
+                "label": f"node#{t.node_id}",
+            }
+        )
     return out
 
 

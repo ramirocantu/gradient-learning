@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.captures import Attempt, Question, QuestionTag
 from app.models.features import QuestionFeatures
-from app.models.outline import ContentCategory, Topic
 
 
 class QuestionNotFoundError(Exception):
@@ -19,33 +18,27 @@ class AttemptNotFoundError(Exception):
 
 
 async def _build_question_payload(session: AsyncSession, q: Question) -> dict[str, Any]:
+    # T14 partial port: canonical QuestionTag is keyed on node_id. The path/label
+    # resolution via OutlineLookup is a T14 follow-up; surface raw node_id +
+    # source for now so MCP/tutor doesn't 500.
     tag_rows = (
         await session.execute(
-            select(QuestionTag, Topic.name, ContentCategory.code, ContentCategory.name)
-            .join(Topic, Topic.id == QuestionTag.topic_id, isouter=True)
-            .join(
-                ContentCategory,
-                ContentCategory.id == QuestionTag.content_category_id,
-                isouter=True,
-            )
+            select(QuestionTag)
             .where(QuestionTag.question_id == q.id)
             .where(QuestionTag.is_overridden.is_(False))
         )
-    ).all()
+    ).scalars().all()
 
-    tags: list[dict[str, Any]] = []
-    for tag, topic_name, cc_code, cc_label in tag_rows:
-        tags.append(
-            {
-                "topic_id": tag.topic_id,
-                "topic_name": topic_name,
-                "content_category_code": cc_code,
-                "content_category_label": cc_label,
-                "skill": tag.skill,
-                "confidence": float(tag.confidence) if tag.confidence is not None else None,
-                "rationale": tag.rationale,
-            }
-        )
+    tags: list[dict[str, Any]] = [
+        {
+            "node_id": tag.node_id,
+            "source": tag.source,
+            "confidence": float(tag.confidence) if tag.confidence is not None else None,
+            "rationale": tag.rationale,
+            "manual_review": tag.manual_review,
+        }
+        for tag in tag_rows
+    ]
 
     features = (
         await session.execute(select(QuestionFeatures).where(QuestionFeatures.question_id == q.id))

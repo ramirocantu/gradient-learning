@@ -6,8 +6,7 @@ from sqlalchemy import case, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.attempt_note import AttemptNote
-from app.models.captures import Attempt, Question, QuestionTag
-from app.models.outline import Topic
+from app.models.captures import Attempt, Question, QuestionTag  # noqa: F401 — kept for future port
 
 
 class SessionNotFoundError(Exception):
@@ -83,34 +82,10 @@ async def get_session_summary(session: AsyncSession, *, test_id: str) -> dict[st
     correct_total = int(summary.correct_count or 0)
     accuracy = (correct_total / attempts_total) if attempts_total else 0.0
 
-    topic_rows = (
-        await session.execute(
-            select(
-                QuestionTag.topic_id,
-                Topic.name,
-                func.count(Attempt.id).label("attempts"),
-                func.sum(case((Attempt.is_correct.is_(True), 1), else_=0)).label("correct"),
-            )
-            .join(QuestionTag, QuestionTag.question_id == Attempt.question_id)
-            .join(Topic, Topic.id == QuestionTag.topic_id)
-            .where(Attempt.uworld_test_id == test_id)
-            .where(QuestionTag.is_overridden.is_(False))
-            .where(QuestionTag.topic_id.is_not(None))
-            .group_by(QuestionTag.topic_id, Topic.name)
-            .order_by(func.count(Attempt.id).desc())
-        )
-    ).all()
-    by_topic = [
-        {
-            "topic_id": r.topic_id,
-            "topic_name": r.name,
-            "attempts": int(r.attempts),
-            "correct": int(r.correct or 0),
-            "accuracy": (int(r.correct or 0) / int(r.attempts)) if r.attempts else 0.0,
-        }
-        for r in topic_rows
-    ]
-    top_topics = by_topic[:5]
+    # TODO(T14 follow-up): per-node session breakdown via QuestionTag.node_id +
+    # OutlineLookup.path_of for the topic_name. Returns empty until ported.
+    by_topic: list[dict[str, Any]] = []
+    top_topics: list[dict[str, Any]] = []
 
     flagged_rows = (
         await session.execute(

@@ -1,12 +1,12 @@
-"""Standalone question detail routes (Ticket 6.6 + 6.9a + 6.9c).
+"""Standalone question detail routes.
 
-GET    /questions/by-qid/{qid}          redirect to /questions/{id} for the UWorld qid
-GET    /questions/{question_id}         full-page detail view by integer Question.id
-GET    /questions/{question_id}/add-tag-form    inline add-tag form fragment
-POST   /questions/{question_id}/add-tag         submit the add-tag form
-DELETE /tags/{tag_id}                   remove a tag (hard-delete manual, soft-delete llm)
-POST   /questions/{question_id}/attempts/{attempt_id}/notes        create a note (HTMX)
-DELETE /questions/{question_id}/attempts/{attempt_id}/notes/{nid}  delete a note (HTMX)
+T14 partial port: the add-tag form's CC/topic/skill picker is gone (the
+`Topic` / `ContentCategory` tables were dropped and tags are now node_id-only
+per V-T1). The new add-tag UI takes a node-path (` >> `-delimited) which the
+server resolves via `OutlineLookup.node_id_by_path`. The form/template/UX
+rebuild is a T14 follow-up; this module keeps its route table loadable, the
+notes endpoints fully functional, and the add-tag endpoints return a stub
+explanation until the new UI lands.
 """
 
 from __future__ import annotations
@@ -19,8 +19,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.captures import Question, QuestionTag
-from app.models.outline import ContentCategory, Topic
+from app.models.captures import Question
 from app.services.admin_tags import (
     ManualTagConflictError,
     ManualTagValidationError,
@@ -38,24 +37,15 @@ from app.services.attempt_notes import (
     delete_note,
     list_notes,
 )
+from app.services.categorizer.outline_lookup import OutlineLookup, OutlineNotSeededError
 from app.web.dashboard.db import get_session
-from app.web.dashboard.services.drilldown import (
-    get_cc_info,
-    get_question_detail,
-    list_all_ccs,
-    _tags_summaries_for,
-)
+from app.web.dashboard.services.drilldown import get_question_detail
 
 router = APIRouter(prefix="/questions")
 tags_router = APIRouter()
 
 
 def _resolve_back_url(request: Request) -> str:
-    """Return a safe path-only back URL derived from the request's Referer header.
-
-    Falls back to /mastery when no referer is present, when the referer is
-    another question detail page (avoid loops), or when the referer is malformed.
-    """
     referer = request.headers.get("referer")
     if not referer:
         return "/mastery"
@@ -105,68 +95,28 @@ async def add_tag_form_fragment(
     question_id: int,
     session: AsyncSession = Depends(get_session),
 ) -> HTMLResponse:
-    """Return the inline add-tag form fragment for the question detail page."""
+    """Return a stub add-tag form fragment.
+
+    TODO(T14 follow-up): the rebuilt picker accepts a `>>`-delimited node path
+    (resolved server-side via OutlineLookup) instead of the retired CC/topic/
+    skill triple.
+    """
     q = await session.get(Question, question_id)
     if q is None:
         raise HTTPException(status_code=404, detail=f"question_id={question_id} not found")
-
-    all_ccs = await list_all_ccs(session)
-
-    # Fetch existing topic_ids directly from QuestionTag (TagSummary does not expose topic_id).
-    topic_id_rows = (
-        (
-            await session.execute(
-                select(QuestionTag.topic_id)
-                .where(QuestionTag.question_id == question_id)
-                .where(QuestionTag.is_overridden == False)  # noqa: E712
-                .where(QuestionTag.topic_id.is_not(None))
-            )
-        )
-        .scalars()
-        .all()
-    )
-    existing_topic_ids: set[int] = set(topic_id_rows)
-
-    # Build full {cc_code: [{id, name, already_tagged}, ...]} map for client-side
-    # filtering. ~33 CCs / ~1500 topics is small enough to ship to the browser in
-    # one shot; cuts round trips and avoids HTMX orphan-<option> parser bugs.
-    topic_rows = (
-        await session.execute(
-            select(Topic.id, Topic.name, ContentCategory.code)
-            .join(ContentCategory, Topic.content_category_id == ContentCategory.id)
-            .order_by(ContentCategory.code, Topic.name)
-        )
-    ).all()
-    topics_by_cc: dict[str, list[dict]] = {}
-    for t_id, t_name, cc_code in topic_rows:
-        topics_by_cc.setdefault(cc_code, []).append(
-            {
-                "id": t_id,
-                "name": t_name,
-                "already_tagged": t_id in existing_topic_ids,
-            }
-        )
-
-    # Derive CC codes and skills from TagSummary labels (stable format).
-    tags_map = await _tags_summaries_for(session, [question_id])
-    tags = tags_map.get(question_id, [])
-    existing_cc_codes: set[str] = {
-        t.label.split(" — ")[0] for t in tags if t.kind == "content_category" and " — " in t.label
-    }
-    existing_skills: set[int] = {
-        int(t.label.split("Skill ")[-1]) for t in tags if t.kind == "skill"
-    }
-
     templates = request.app.state.templates
+    # Render a minimal fragment so the dashboard doesn't 500. Real picker UX
+    # ships with the dashboard SPA rebuild (SPEC §C frontend carve-out).
     return templates.TemplateResponse(
         request=request,
         name="partials/add_tag_form.html",
         context={
             "question_id": question_id,
-            "all_ccs": all_ccs,
-            "topics_by_cc": topics_by_cc,
-            "existing_cc_codes": existing_cc_codes,
-            "existing_skills": existing_skills,
+            "all_ccs": [],
+            "topics_by_cc": {},
+            "existing_cc_codes": set(),
+            "existing_skills": set(),
+            "node_id_form_pending": True,
         },
     )
 
@@ -175,14 +125,11 @@ async def add_tag_form_fragment(
 async def add_tag_submit(
     request: Request,
     question_id: int,
-    tag_kind: Annotated[str, Form()],
-    cc_code: Annotated[str | None, Form()] = None,
-    topic_id: Annotated[str | None, Form()] = None,
-    skill: Annotated[str | None, Form()] = None,
+    node_path: Annotated[str | None, Form()] = None,
     rationale: Annotated[str | None, Form()] = None,
     session: AsyncSession = Depends(get_session),
 ) -> HTMLResponse:
-    """Submit the add-tag form; return the refreshed tags-section fragment on success."""
+    """Resolve `node_path` via OutlineLookup → create manual node_id tag."""
     templates = request.app.state.templates
 
     def _error(message: str) -> HTMLResponse:
@@ -193,31 +140,22 @@ async def add_tag_submit(
             status_code=200,
         )
 
-    if tag_kind not in {"topic", "content_category", "skill"}:
-        return _error(f"Unknown tag kind: {tag_kind!r}")
-
-    # Resolve the one target field based on tag_kind; ignore the others.
-    target_kwargs: dict = {}
-    if tag_kind == "topic":
-        topic_id_int = _parse_int(topic_id)
-        if topic_id_int is None:
-            return _error("A topic must be selected when tag kind is 'topic'.")
-        target_kwargs = {"topic_id": topic_id_int}
-    elif tag_kind == "content_category":
-        if not cc_code:
-            return _error("A content category must be selected.")
-        cc = await get_cc_info(session, cc_code)
-        if cc is None:
-            return _error(f"Unknown content category: {cc_code!r}")
-        target_kwargs = {"content_category_id": cc.id}
-    else:  # skill
-        skill_int = _parse_int(skill)
-        if skill_int is None or skill_int not in range(1, 5):
-            return _error("Skill must be an integer between 1 and 4.")
-        target_kwargs = {"skill": skill_int}
+    if not node_path or not node_path.strip():
+        return _error("A node path is required (e.g. 'CP >> FC1 >> 1A >> Amino acids').")
 
     try:
-        await create_manual_tag(session, question_id, rationale=rationale, **target_kwargs)
+        lookup = await OutlineLookup.load(session)
+    except OutlineNotSeededError as exc:
+        return _error(f"Outline not seeded: {exc}")
+
+    node_id = lookup.node_id_by_path(node_path)
+    if node_id is None:
+        return _error(f"Unknown or ambiguous node path: {node_path!r}")
+
+    try:
+        await create_manual_tag(
+            session, question_id, node_id=node_id, rationale=rationale
+        )
     except ManualTagConflictError:
         return _error("This tag already exists for the question.")
     except ManualTagValidationError as exc:
@@ -236,18 +174,6 @@ async def add_tag_submit(
         name="partials/tags_section.html",
         context={"tags": detail.tags, "question_id": question_id},
     )
-
-
-def _parse_int(v: str | None) -> int | None:
-    if v is None:
-        return None
-    v = v.strip()
-    if not v:
-        return None
-    try:
-        return int(v)
-    except ValueError:
-        return None
 
 
 @router.post("/{question_id}/attempts/{attempt_id}/notes", response_class=HTMLResponse)
@@ -323,10 +249,7 @@ async def question_detail(
     if detail is None:
         raise HTTPException(status_code=404, detail=f"question_id={question_id} not found")
 
-    # SPEC §T26 / §V18: in-process Anki lookup for the question's UWorld qid.
-    # Empty list is the normal answer for qids MileDown hasn't tagged.
     anki_cards = await list_cards_for_qid(session, qid=detail.question.qid)
-
     back_url = _resolve_back_url(request)
 
     templates = request.app.state.templates

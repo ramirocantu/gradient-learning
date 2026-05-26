@@ -1,12 +1,18 @@
-"""Data-fetching helpers for the Sessions dashboard view (Ticket 6.9d).
+"""Data-fetching helpers for the Sessions dashboard view — T14 stub.
 
-A "session" is the set of `attempts` rows sharing a `uworld_test_id`. Rows
-with `uworld_test_id IS NULL` are aggregated into a single "Unsessioned"
-pseudo-row.
+The PoC's session rollups joined `QuestionTag.topic_id → Topic.name` for the
+"top topics" lists rendered on each session row. Topic + topic_id columns are
+gone (T1/T2); restoring per-session topic breakdowns needs the node_id
+resolver (`OutlineLookup.path_of`) and the V-O1 subtree rollup.
+
+Stub keeps the public surface so `app/web/dashboard/routes/sessions.py`
+loads. Session rows still surface accurate attempt/correct/flag/note counts
+(those are outline-free) — only `top_topics` / `topic_labels` are empty.
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -14,13 +20,9 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.attempt_note import AttemptNote
-from app.models.captures import Attempt, Question, QuestionTag
-from app.models.outline import Topic
+from app.models.captures import Attempt, Question
 
-
-# --------------------------------------------------------------------------- #
-# Dataclasses
-# --------------------------------------------------------------------------- #
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -68,330 +70,129 @@ class SessionDetail:
     attempts: list[SessionAttempt]
 
 
-# --------------------------------------------------------------------------- #
-# Internals
-# --------------------------------------------------------------------------- #
-
-
-_CARS_LABEL = "CARS (skill)"
-_TOP_TOPICS_LIMIT = 3
-
-
-async def _top_topics_for(
-    session: AsyncSession,
-    *,
-    test_ids: list[str],
-    include_null: bool,
-) -> dict[str | None, list[SessionRowTopic]]:
-    """Compute top-3 topics for each session bucket, attempt-count weighted.
-
-    Returns a dict keyed by `uworld_test_id` (with `None` for the unsessioned
-    bucket when ``include_null=True``).
-    """
-    if not test_ids and not include_null:
-        return {}
-
-    # Topic-tagged attempts.
-    topic_stmt = (
-        select(
-            Attempt.uworld_test_id,
-            QuestionTag.topic_id,
-            Topic.name.label("topic_name"),
-            func.count(Attempt.id).label("attempt_count"),
-        )
-        .join(QuestionTag, QuestionTag.question_id == Attempt.question_id)
-        .join(Topic, Topic.id == QuestionTag.topic_id)
-        .where(QuestionTag.is_overridden.is_(False))
-        .where(QuestionTag.topic_id.is_not(None))
-    )
-
-    # CARS attempts: questions with a skill-only QuestionTag (no topic_id).
-    cars_stmt = (
-        select(
-            Attempt.uworld_test_id,
-            func.count(Attempt.id).label("attempt_count"),
-        )
-        .join(QuestionTag, QuestionTag.question_id == Attempt.question_id)
-        .where(QuestionTag.is_overridden.is_(False))
-        .where(QuestionTag.skill.is_not(None))
-        .where(QuestionTag.topic_id.is_(None))
-    )
-
-    conds = []
-    if test_ids:
-        conds.append(Attempt.uworld_test_id.in_(test_ids))
-    if include_null:
-        conds.append(Attempt.uworld_test_id.is_(None))
-    if not conds:
-        return {}
-
-    from sqlalchemy import or_
-
-    topic_stmt = topic_stmt.where(or_(*conds)).group_by(
-        Attempt.uworld_test_id, QuestionTag.topic_id, Topic.name
-    )
-    cars_stmt = cars_stmt.where(or_(*conds)).group_by(Attempt.uworld_test_id)
-
-    topic_rows = (await session.execute(topic_stmt)).all()
-    cars_rows = (await session.execute(cars_stmt)).all()
-
-    by_key: dict[str | None, list[SessionRowTopic]] = {}
-    for r in topic_rows:
-        by_key.setdefault(r.uworld_test_id, []).append(
-            SessionRowTopic(
-                topic_id=r.topic_id,
-                label=r.topic_name,
-                attempt_count=int(r.attempt_count),
-            )
-        )
-    for r in cars_rows:
-        by_key.setdefault(r.uworld_test_id, []).append(
-            SessionRowTopic(
-                topic_id=None,
-                label=_CARS_LABEL,
-                attempt_count=int(r.attempt_count),
-            )
-        )
-
-    out: dict[str | None, list[SessionRowTopic]] = {}
-    for k, rows in by_key.items():
-        rows.sort(key=lambda t: (-t.attempt_count, t.label))
-        out[k] = rows[:_TOP_TOPICS_LIMIT]
-    return out
-
-
-async def _notes_counts_by_test_id(
-    session: AsyncSession,
-    *,
-    test_ids: list[str],
-    include_null: bool,
-) -> tuple[dict[str | None, int], dict[str | None, int]]:
-    """Return (note_count_by_test_id, flag_count_by_test_id).
-
-    Notes are joined to attempts so the aggregation rolls up to the session
-    bucket via `attempts.uworld_test_id`.
-    """
-    if not test_ids and not include_null:
-        return {}, {}
-
-    from sqlalchemy import or_
-
-    conds = []
-    if test_ids:
-        conds.append(Attempt.uworld_test_id.in_(test_ids))
-    if include_null:
-        conds.append(Attempt.uworld_test_id.is_(None))
-
-    stmt = (
-        select(
-            Attempt.uworld_test_id,
-            func.count(AttemptNote.id).label("note_count"),
-            func.sum(case((AttemptNote.flag_for_review.is_(True), 1), else_=0)).label("flag_count"),
-        )
-        .join(AttemptNote, AttemptNote.attempt_id == Attempt.id)
-        .where(or_(*conds))
-        .group_by(Attempt.uworld_test_id)
-    )
-
-    rows = (await session.execute(stmt)).all()
-    notes: dict[str | None, int] = {}
-    flags: dict[str | None, int] = {}
-    for r in rows:
-        notes[r.uworld_test_id] = int(r.note_count or 0)
-        flags[r.uworld_test_id] = int(r.flag_count or 0)
-    return notes, flags
-
-
-# --------------------------------------------------------------------------- #
-# Public API
-# --------------------------------------------------------------------------- #
-
-
 async def list_sessions(session: AsyncSession, *, limit: int = 20) -> list[SessionRow]:
-    """Recent sessions, sorted by latest attempt DESC, plus an unsessioned bucket.
+    """Per-`uworld_test_id` rollup. `top_topics` empty until node_id port lands."""
+    if limit < 1:
+        limit = 1
+    if limit > 100:
+        limit = 100
 
-    The unsessioned bucket — a single aggregation across all rows with
-    `uworld_test_id IS NULL` — is always appended at the end of the list
-    when any null-test_id attempts exist. It does not count against ``limit``.
-    """
-    agg_stmt = (
-        select(
-            Attempt.uworld_test_id.label("uworld_test_id"),
-            func.min(Attempt.attempted_at).label("started_at"),
-            func.max(Attempt.attempted_at).label("ended_at"),
-            func.count(Attempt.id).label("attempt_count"),
-            func.sum(case((Attempt.is_correct.is_(True), 1), else_=0)).label("correct_count"),
-        )
-        .where(Attempt.uworld_test_id.is_not(None))
-        .group_by(Attempt.uworld_test_id)
-        .order_by(func.max(Attempt.attempted_at).desc())
-        .limit(limit)
-    )
-    rows = (await session.execute(agg_stmt)).all()
-
-    null_stmt = select(
-        func.min(Attempt.attempted_at).label("started_at"),
-        func.max(Attempt.attempted_at).label("ended_at"),
-        func.count(Attempt.id).label("attempt_count"),
-        func.sum(case((Attempt.is_correct.is_(True), 1), else_=0)).label("correct_count"),
-    ).where(Attempt.uworld_test_id.is_(None))
-    null_row = (await session.execute(null_stmt)).one()
-
-    test_ids = [r.uworld_test_id for r in rows]
-    has_unsessioned = (null_row.attempt_count or 0) > 0
-
-    topics_by_id = await _top_topics_for(session, test_ids=test_ids, include_null=has_unsessioned)
-    notes_by_id, flags_by_id = await _notes_counts_by_test_id(
-        session, test_ids=test_ids, include_null=has_unsessioned
-    )
-
-    out: list[SessionRow] = []
-    for r in rows:
-        out.append(
-            SessionRow(
-                uworld_test_id=r.uworld_test_id,
-                started_at=r.started_at,
-                ended_at=r.ended_at,
-                attempt_count=int(r.attempt_count),
-                correct_count=int(r.correct_count or 0),
-                flag_count=int(flags_by_id.get(r.uworld_test_id, 0)),
-                note_count=int(notes_by_id.get(r.uworld_test_id, 0)),
-                top_topics=topics_by_id.get(r.uworld_test_id, []),
+    rows = (
+        await session.execute(
+            select(
+                Attempt.uworld_test_id.label("test_id"),
+                func.count(Attempt.id).label("attempt_count"),
+                func.sum(case((Attempt.is_correct.is_(True), 1), else_=0)).label("correct"),
+                func.min(Attempt.attempted_at).label("started_at"),
+                func.max(Attempt.attempted_at).label("ended_at"),
+                func.sum(case((Attempt.flagged.is_(True), 1), else_=0)).label("flag_count"),
             )
+            .group_by(Attempt.uworld_test_id)
+            .order_by(func.max(Attempt.attempted_at).desc())
+            .limit(limit)
         )
+    ).all()
 
-    if has_unsessioned:
-        out.append(
-            SessionRow(
-                uworld_test_id=None,
-                started_at=null_row.started_at,
-                ended_at=null_row.ended_at,
-                attempt_count=int(null_row.attempt_count),
-                correct_count=int(null_row.correct_count or 0),
-                flag_count=int(flags_by_id.get(None, 0)),
-                note_count=int(notes_by_id.get(None, 0)),
-                top_topics=topics_by_id.get(None, []),
+    note_count_by_test = await _notes_counts_by_test_id(session)
+
+    return [
+        SessionRow(
+            uworld_test_id=r.test_id,
+            started_at=r.started_at,
+            ended_at=r.ended_at,
+            attempt_count=int(r.attempt_count or 0),
+            correct_count=int(r.correct or 0),
+            flag_count=int(r.flag_count or 0),
+            note_count=note_count_by_test.get(r.test_id, 0),
+            top_topics=[],
+        )
+        for r in rows
+    ]
+
+
+async def _notes_counts_by_test_id(session: AsyncSession) -> dict[str | None, int]:
+    rows = (
+        await session.execute(
+            select(
+                Attempt.uworld_test_id.label("test_id"),
+                func.count(AttemptNote.id).label("n"),
             )
+            .join(AttemptNote, AttemptNote.attempt_id == Attempt.id)
+            .group_by(Attempt.uworld_test_id)
         )
+    ).all()
+    return {r.test_id: int(r.n or 0) for r in rows}
 
-    return out
 
-
-async def get_session_detail(session: AsyncSession, *, test_id: str | None) -> SessionDetail | None:
-    """Single-session detail. ``test_id=None`` → the unsessioned aggregation."""
-    if test_id is None:
-        condition = Attempt.uworld_test_id.is_(None)
-    else:
-        condition = Attempt.uworld_test_id == test_id
-
+async def get_session_detail(
+    session: AsyncSession, *, test_id: str | None
+) -> SessionDetail | None:
+    """Per-session detail. `top_topics` + `topic_labels` empty until node_id port."""
     summary = (
         await session.execute(
             select(
+                func.count(Attempt.id).label("n"),
+                func.sum(case((Attempt.is_correct.is_(True), 1), else_=0)).label("correct"),
                 func.min(Attempt.attempted_at).label("started_at"),
                 func.max(Attempt.attempted_at).label("ended_at"),
-                func.count(Attempt.id).label("attempt_count"),
-                func.sum(case((Attempt.is_correct.is_(True), 1), else_=0)).label("correct_count"),
-            ).where(condition)
+                func.sum(case((Attempt.flagged.is_(True), 1), else_=0)).label("flag_count"),
+            ).where(Attempt.uworld_test_id == test_id)
         )
     ).one()
-
-    if not summary.attempt_count:
+    if not summary.n:
         return None
 
-    if test_id is None:
-        topics_map = await _top_topics_for(session, test_ids=[], include_null=True)
-        notes_by_id, flags_by_id = await _notes_counts_by_test_id(
-            session, test_ids=[], include_null=True
+    note_total = (
+        await session.execute(
+            select(func.count(AttemptNote.id))
+            .join(Attempt, Attempt.id == AttemptNote.attempt_id)
+            .where(Attempt.uworld_test_id == test_id)
         )
-        top_topics = topics_map.get(None, [])
-        note_count = notes_by_id.get(None, 0)
-        flag_count = flags_by_id.get(None, 0)
-    else:
-        topics_map = await _top_topics_for(session, test_ids=[test_id], include_null=False)
-        notes_by_id, flags_by_id = await _notes_counts_by_test_id(
-            session, test_ids=[test_id], include_null=False
-        )
-        top_topics = topics_map.get(test_id, [])
-        note_count = notes_by_id.get(test_id, 0)
-        flag_count = flags_by_id.get(test_id, 0)
+    ).scalar_one()
 
     attempt_rows = (
         await session.execute(
             select(Attempt, Question.qid)
             .join(Question, Question.id == Attempt.question_id)
-            .where(condition)
-            .order_by(Attempt.attempted_at.asc(), Attempt.id.asc())
+            .where(Attempt.uworld_test_id == test_id)
+            .order_by(Attempt.attempted_at.asc())
         )
     ).all()
-
-    attempt_ids = [a.id for a, _ in attempt_rows]
-    question_ids = list({a.question_id for a, _ in attempt_rows})
-
-    # Per-attempt note count.
-    notes_per_attempt: dict[int, int] = {}
-    if attempt_ids:
-        rows = (
+    note_count_by_attempt = {
+        row[0]: int(row[1])
+        for row in (
             await session.execute(
                 select(AttemptNote.attempt_id, func.count(AttemptNote.id))
-                .where(AttemptNote.attempt_id.in_(attempt_ids))
+                .join(Attempt, Attempt.id == AttemptNote.attempt_id)
+                .where(Attempt.uworld_test_id == test_id)
                 .group_by(AttemptNote.attempt_id)
             )
         ).all()
-        notes_per_attempt = {a_id: int(n) for a_id, n in rows}
+    }
 
-    # Topic labels per question (with CARS bucket for skill-only tags).
-    topic_labels_by_q: dict[int, list[str]] = {q: [] for q in question_ids}
-    if question_ids:
-        topic_rows = (
-            await session.execute(
-                select(QuestionTag.question_id, Topic.name)
-                .join(Topic, Topic.id == QuestionTag.topic_id)
-                .where(QuestionTag.question_id.in_(question_ids))
-                .where(QuestionTag.is_overridden.is_(False))
-                .where(QuestionTag.topic_id.is_not(None))
-            )
-        ).all()
-        for q_id, t_name in topic_rows:
-            if t_name not in topic_labels_by_q[q_id]:
-                topic_labels_by_q[q_id].append(t_name)
-
-        cars_question_ids = (
-            await session.execute(
-                select(QuestionTag.question_id)
-                .where(QuestionTag.question_id.in_(question_ids))
-                .where(QuestionTag.is_overridden.is_(False))
-                .where(QuestionTag.skill.is_not(None))
-                .where(QuestionTag.topic_id.is_(None))
-            )
-        ).scalars()
-        for q_id in cars_question_ids:
-            if _CARS_LABEL not in topic_labels_by_q[q_id]:
-                topic_labels_by_q[q_id].append(_CARS_LABEL)
-
-    attempts_out: list[SessionAttempt] = []
-    for attempt, qid in attempt_rows:
-        attempts_out.append(
-            SessionAttempt(
-                attempt_id=attempt.id,
-                question_id=attempt.question_id,
-                qid=qid,
-                attempted_at=attempt.attempted_at,
-                selected_choice=attempt.selected_choice,
-                is_correct=attempt.is_correct,
-                flagged=attempt.flagged,
-                topic_labels=topic_labels_by_q.get(attempt.question_id, []),
-                note_count=notes_per_attempt.get(attempt.id, 0),
-            )
+    attempts = [
+        SessionAttempt(
+            attempt_id=a.id,
+            question_id=a.question_id,
+            qid=qid,
+            attempted_at=a.attempted_at,
+            selected_choice=a.selected_choice,
+            is_correct=a.is_correct,
+            flagged=a.flagged,
+            topic_labels=[],
+            note_count=note_count_by_attempt.get(a.id, 0),
         )
+        for (a, qid) in attempt_rows
+    ]
 
     return SessionDetail(
         uworld_test_id=test_id,
         started_at=summary.started_at,
         ended_at=summary.ended_at,
-        attempt_count=int(summary.attempt_count),
-        correct_count=int(summary.correct_count or 0),
-        flag_count=int(flag_count),
-        note_count=int(note_count),
-        top_topics=top_topics,
-        attempts=attempts_out,
+        attempt_count=int(summary.n or 0),
+        correct_count=int(summary.correct or 0),
+        flag_count=int(summary.flag_count or 0),
+        note_count=int(note_total or 0),
+        top_topics=[],
+        attempts=attempts,
     )

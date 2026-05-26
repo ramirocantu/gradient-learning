@@ -6,8 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.attempt_note import AttemptNote
-from app.models.captures import Attempt, Question, QuestionTag
-from app.models.outline import Topic
+from app.models.captures import Attempt, Question
 
 
 async def get_recent_captures(session: AsyncSession, *, n: int = 5) -> list[dict[str, Any]]:
@@ -28,22 +27,8 @@ async def get_recent_captures(session: AsyncSession, *, n: int = 5) -> list[dict
     attempt_ids = [a.id for a, _, _ in rows]
     question_ids = [a.question_id for a, _, _ in rows]
 
-    topic_rows = (
-        (
-            await session.execute(
-                select(QuestionTag.question_id, Topic.name)
-                .join(Topic, Topic.id == QuestionTag.topic_id)
-                .where(QuestionTag.question_id.in_(question_ids))
-                .where(QuestionTag.is_overridden.is_(False))
-                .where(QuestionTag.topic_id.is_not(None))
-            )
-        ).all()
-        if question_ids
-        else []
-    )
+    # TODO(T14 follow-up): resolve QuestionTag.node_id → OutlineLookup.path_of().
     topics_by_q: dict[int, list[str]] = {}
-    for qid, name in topic_rows:
-        topics_by_q.setdefault(qid, []).append(name)
 
     note_rows = (
         (

@@ -1,10 +1,20 @@
+"""Dashboard utils — T14 partial port.
+
+`get_recent_activity` labelled tags via the dropped `Topic` / `ContentCategory`
+tables and the renamed-away `QuestionTag.topic_id` / `.content_category_id` /
+`.skill` columns. With canonical `QuestionTag.node_id`, the label is the
+outline node's `path_of(node_id)` via `OutlineLookup`. T14 follow-up wires
+that in; for now the activity rows render with a placeholder label so the
+home page doesn't 500.
+"""
+
 from datetime import datetime, timezone
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Any
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.captures import Attempt, Question, QuestionTag
-from app.models.outline import Topic, ContentCategory
 
 
 def get_relative_time(dt: datetime) -> str:
@@ -26,7 +36,10 @@ def get_relative_time(dt: datetime) -> str:
 
 
 async def get_recent_activity(session: AsyncSession, limit: int = 5) -> list[dict[str, Any]]:
-    """Fetch recent attempts with their question, tag, and label."""
+    """Fetch recent attempts with their question + a best-effort tag label.
+
+    TODO(T14 follow-up): resolve `tag.node_id` → human label via OutlineLookup.
+    """
     recent_attempts_query = select(Attempt).order_by(Attempt.attempted_at.desc()).limit(limit)
     recent_result = await session.execute(recent_attempts_query)
     recent_attempts = list(recent_result.scalars().all())
@@ -35,17 +48,18 @@ async def get_recent_activity(session: AsyncSession, limit: int = 5) -> list[dic
     if recent_attempts:
         q_ids = [a.question_id for a in recent_attempts]
 
+        # First tag per question (highest-confidence schema_map/manual or any llm).
         tags_query = (
             select(QuestionTag, Question)
             .join(Question, QuestionTag.question_id == Question.id)
             .where(QuestionTag.question_id.in_(q_ids))
-            .order_by(QuestionTag.question_id, QuestionTag.confidence.desc())
+            .order_by(QuestionTag.question_id, QuestionTag.confidence.desc().nullslast())
         )
         tags_result = await session.execute(tags_query)
         tags_data = list(tags_result.all())
 
-        q_tags = {}
-        q_obj = {}
+        q_tags: dict[int, QuestionTag] = {}
+        q_obj: dict[int, Question] = {}
         for tag, question in tags_data:
             if tag.question_id not in q_tags:
                 q_tags[tag.question_id] = tag
@@ -54,32 +68,19 @@ async def get_recent_activity(session: AsyncSession, limit: int = 5) -> list[dic
         for attempt in recent_attempts:
             tag = q_tags.get(attempt.question_id)
             question = q_obj.get(attempt.question_id)
-
+            label = "Uncategorized"
+            if tag is not None:
+                # Node-id label resolution is a T14 follow-up; surface node_id
+                # so the UI shows something stable instead of "TBD".
+                label = f"Node {tag.node_id}"
             recent_activity.append(
                 {
                     "attempt": attempt,
                     "relative_time": get_relative_time(attempt.attempted_at),
                     "question": question,
                     "tag": tag,
-                    "label": "TBD",
+                    "label": label,
                 }
             )
-
-    for activity in recent_activity:
-        tag = activity["tag"]
-        if not tag:
-            activity["label"] = "Uncategorized"
-            continue
-
-        if tag.topic_id:
-            t = await session.get(Topic, tag.topic_id)
-            activity["label"] = t.name if t else f"Topic {tag.topic_id}"
-        elif tag.content_category_id:
-            cc = await session.get(ContentCategory, tag.content_category_id)
-            activity["label"] = cc.name if cc else f"CC {tag.content_category_id}"
-        elif tag.skill:
-            activity["label"] = f"Skill {tag.skill}"
-        else:
-            activity["label"] = "Uncategorized"
 
     return recent_activity

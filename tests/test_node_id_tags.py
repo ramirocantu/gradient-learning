@@ -22,8 +22,8 @@ from app.models.captures import Passage, Question, QuestionTag
 from app.models.outline import Course, OutlineNode
 
 _HOST_PORT = os.environ.get("HOST_POSTGRES_PORT", "5432")
-_DB_URL = f"postgresql+asyncpg://mcat:mcat_secret@localhost:{_HOST_PORT}/gradient_test"
-_ADMIN_DSN = f"postgresql://mcat:mcat_secret@localhost:{_HOST_PORT}/gradient"
+_DB_URL = f"postgresql+asyncpg://gradient:gradient_secret@localhost:{_HOST_PORT}/gradient_test"
+_ADMIN_DSN = f"postgresql://gradient:gradient_secret@localhost:{_HOST_PORT}/gradient"
 
 _TABLES = [
     Course.__table__,

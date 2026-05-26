@@ -22,7 +22,7 @@ from app.models.features import QuestionFeatures
 
 
 _HOST_PORT = os.environ.get("HOST_POSTGRES_PORT", "5432")
-_ADMIN_DSN = f"postgresql://mcat:mcat_secret@localhost:{_HOST_PORT}/gradient"
+_ADMIN_DSN = f"postgresql://gradient:gradient_secret@localhost:{_HOST_PORT}/gradient"
 _BACKEND_DIR = Path(__file__).resolve().parent.parent
 
 _EXTRACTOR_VERSION = "v1-claude-haiku-4-5-test"
@@ -111,7 +111,7 @@ async def test_migration_apply_and_rollback():
     finally:
         await admin.close()
 
-    target_url = f"postgresql+asyncpg://mcat:mcat_secret@localhost:{_HOST_PORT}/{db_name}"
+    target_url = f"postgresql+asyncpg://gradient:gradient_secret@localhost:{_HOST_PORT}/{db_name}"
     env = {**os.environ, "ALEMBIC_DATABASE_URL": target_url}
 
     try:

@@ -15,8 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from app.models.outline import OUTLINE_PATH_DELIMITER, Course, OutlineNode
 
 _HOST_PORT = os.environ.get("HOST_POSTGRES_PORT", "5432")
-_DB_URL = f"postgresql+asyncpg://mcat:mcat_secret@localhost:{_HOST_PORT}/gradient_test"
-_ADMIN_DSN = f"postgresql://mcat:mcat_secret@localhost:{_HOST_PORT}/gradient"
+_DB_URL = f"postgresql+asyncpg://gradient:gradient_secret@localhost:{_HOST_PORT}/gradient_test"
+_ADMIN_DSN = f"postgresql://gradient:gradient_secret@localhost:{_HOST_PORT}/gradient"
 
 
 @pytest.fixture

@@ -20,7 +20,7 @@ from app.services.tutor import (
     captures as captures_svc,
     flags as flags_svc,
     health as health_svc,
-    # outline as outline_svc,  # FENCED (T17, V-RB1) — routes unmounted
+    outline as outline_svc,
     questions as questions_svc,
     sessions as sessions_svc,
 )
@@ -104,26 +104,52 @@ async def get_flagged_attempts(
     return await flags_svc.get_flagged_attempts(session, limit=limit)
 
 
-# FENCED (T17, V-RB1, V-O5): tutor outline routes consume FENCED
-# `app.services.tutor.outline`. Restoration is tracked in T22 (OutlineLookup
-# port). The route handlers are commented out — direct callers should treat
-# the endpoints as 404 until T22 lands.
-# @router.get("/outline/topics/search")
-# async def search_topics(
-#     q: Annotated[str, Query()],
-#     limit: Annotated[int, Query(ge=1, le=100)] = 20,
-#     session: AsyncSession = Depends(get_session),
-#     _: None = Depends(verify_coach_token),
-# ) -> list[dict[str, Any]]:
-#     return await outline_svc.search_topics(session, query=q, limit=limit)
-#
-#
-# @router.get("/outline")
-# async def get_aamc_outline(
-#     session: AsyncSession = Depends(get_session),
-#     _: None = Depends(verify_coach_token),
-# ) -> dict[str, Any]:
-#     return await outline_svc.get_aamc_outline(session)
+# T22 (V-O1, V-O3, V-D1, V-M1): node-keyed tutor outline surface.
+# Domain-blind — `course` is a query/route param, not implied AAMC.
+@router.get("/outline/nodes/search")
+async def search_outline_nodes(
+    q: Annotated[str, Query()],
+    course: Annotated[str | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    session: AsyncSession = Depends(get_session),
+    _: None = Depends(verify_coach_token),
+) -> list[dict[str, Any]]:
+    try:
+        return await outline_svc.search_nodes(
+            session, query=q, course_slug=course, limit=limit
+        )
+    except outline_svc.CourseNotFoundError:
+        raise HTTPException(
+            404, detail={"reason": "course_not_found", "course_slug": course}
+        )
+
+
+@router.get("/outline")
+async def get_outline_tree(
+    course: Annotated[str, Query()],
+    session: AsyncSession = Depends(get_session),
+    _: None = Depends(verify_coach_token),
+) -> dict[str, Any]:
+    try:
+        return await outline_svc.get_outline_tree(session, course_slug=course)
+    except outline_svc.CourseNotFoundError:
+        raise HTTPException(
+            404, detail={"reason": "course_not_found", "course_slug": course}
+        )
+
+
+@router.get("/outline/nodes/{node_id}/subtree")
+async def get_node_subtree(
+    node_id: int,
+    session: AsyncSession = Depends(get_session),
+    _: None = Depends(verify_coach_token),
+) -> dict[str, Any]:
+    try:
+        return await outline_svc.get_subtree(session, node_id=node_id)
+    except outline_svc.NodeNotFoundError:
+        raise HTTPException(
+            404, detail={"reason": "node_not_found", "node_id": node_id}
+        )
 
 
 @router.get("/healthz")

@@ -75,7 +75,20 @@ async def _test_connection(seeded_report, test_engine):
     so test rows are visible across sessions for the duration of the test but
     are wiped when the outer transaction rolls back. This removes cross-test
     pollution without truncating tables.
+
+    Idempotent ``create_all`` up front patches pre-T22 tech debt: several
+    test modules (``test_outline_lookup``, ``test_outline_subtree``,
+    ``test_outline_nodes``, ``test_node_id_tags``, ``test_anki_queries_smoke``,
+    ``test_source_adapter``) open their own engine, ``DROP SCHEMA public
+    CASCADE``, and rebuild only a subset of tables — leaving the shared
+    ``gradient_test`` DB with missing tables for any later test that goes
+    through this fixture. Re-running ``create_all`` (checkfirst=True
+    default) restores anything they dropped without disturbing tests that
+    intentionally rebuild from scratch.
     """
+    async with test_engine.begin() as repair_conn:
+        await repair_conn.run_sync(Base.metadata.create_all)
+
     async with test_engine.connect() as conn:
         outer_trans = await conn.begin()
         try:

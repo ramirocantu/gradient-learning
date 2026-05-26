@@ -298,7 +298,7 @@ P0 — schema generalize + OpenAI pivot. Ids are monotonic, not positional: T12�
 | T19 | x | (P0.5) reconcile `app/startup.py` + `scripts/seed_outline.py` with `POST /api/v1/courses/{id}/outline:import` flow; remove stale seed call from startup; seed restoration = explicit re-upload of `seeds/aamc_outline.schema.json` | V-RB3,V-O6 |
 | T20 | x | (P0.5) rewrite or remove legacy tests referencing `Topic` / `ContentCategory` / `cc_code`; suite reflects generalized OutlineNode schema | V-RB4 |
 | T21 | x | (P1) complete `/api/v1/courses/*` + outline import route/service/test coverage: create, re-upload (idempotent), validation failure (atomic reject), node-tree reads | V-O2,V-O3,I.outline-import |
-| T22 | . | (P1) extend `app/api/v1/tutor.py` + backing services for node search + outline_subtree traversal without AAMC-only tree shape; MCP/tutor flows speak `node_id` only | V-O1,V-O3,V-D1,V-M1 |
+| T22 | x | (P1) extend `app/api/v1/tutor.py` + backing services for node search + outline_subtree traversal without AAMC-only tree shape; MCP/tutor flows speak `node_id` only | V-O1,V-O3,V-D1,V-M1 |
 | T23 | . | (P1) normalize dashboard + anki consumers to public `/api/v1/*` contracts only; ⊥ dashboard-only backend seam; Jinja stays as thin client until T34 | V-D1 |
 | T24 | . | (P2) add SQLAlchemy models + Alembic migrations for `pdf_sources`, `atomic_facts`, `content_embeddings`, `concept_edges`, `notion_pages` (+ `discriminator_factors` if not yet modeled); register in `app/models/__init__.py` | V-KB1,I.schema |
 | T25 | . | (P2) add `pgvector`, `notion-client`, `PyMuPDF`/`pdfplumber` to `pyproject.toml`; wire config plumbing for `PDF_INBOX_DIR`, `NOTION_API_TOKEN`, `NOTION_WIKI_DB_ID`, `EMBEDDING_MODEL`; startup validation | V-KB2,§C,I.env |

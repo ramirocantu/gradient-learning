@@ -61,19 +61,24 @@ if ! (cd "$MAIN" && git check-ignore -q .claude/worktrees 2>/dev/null); then
 fi
 
 # --- Determine base branch ---
+# Prefer DEFAULT_BASE_BRANCH (dev) over origin/HEAD, which points at main.
+# Resolve to a concrete start-point ref, preferring origin/<branch> when it
+# exists, else the local branch (origin/dev is not always pushed).
 BASE_BRANCH=""
-if BASE_BRANCH="$(cd "$MAIN" && git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')"; then
-  :
-fi
-if [ -z "$BASE_BRANCH" ]; then
-  for candidate in "$DEFAULT_BASE_BRANCH" main master; do
-    if (cd "$MAIN" && git show-ref --verify --quiet "refs/remotes/origin/$candidate" 2>/dev/null); then
-      BASE_BRANCH="$candidate"
-      break
-    fi
-  done
-fi
+BASE_REF=""
+for candidate in "$DEFAULT_BASE_BRANCH" main master; do
+  if (cd "$MAIN" && git show-ref --verify --quiet "refs/remotes/origin/$candidate" 2>/dev/null); then
+    BASE_BRANCH="$candidate"
+    BASE_REF="origin/$candidate"
+    break
+  elif (cd "$MAIN" && git show-ref --verify --quiet "refs/heads/$candidate" 2>/dev/null); then
+    BASE_BRANCH="$candidate"
+    BASE_REF="$candidate"
+    break
+  fi
+done
 BASE_BRANCH="${BASE_BRANCH:-$DEFAULT_BASE_BRANCH}"
+BASE_REF="${BASE_REF:-$DEFAULT_BASE_BRANCH}"
 
 # --- Create worktree ---
 mkdir -p "$(dirname "$WT_DIR")"
@@ -86,8 +91,8 @@ if (cd "$MAIN" && git show-ref --verify --quiet "refs/heads/$BRANCH_NAME" 2>/dev
   log "using existing branch $BRANCH_NAME"
   (cd "$MAIN" && git worktree add "$WT_DIR" "$BRANCH_NAME") >&2
 else
-  log "creating branch $BRANCH_NAME from origin/$BASE_BRANCH"
-  (cd "$MAIN" && git worktree add -b "$BRANCH_NAME" "$WT_DIR" "origin/$BASE_BRANCH") >&2
+  log "creating branch $BRANCH_NAME from $BASE_REF"
+  (cd "$MAIN" && git worktree add -b "$BRANCH_NAME" "$WT_DIR" "$BASE_REF") >&2
 fi
 
 # --- Copy .worktreeinclude files ---

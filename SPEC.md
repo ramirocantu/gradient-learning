@@ -273,7 +273,7 @@ Re-sequenced 2026-05-26 per rescope: insert P0.5 stabilization gate; substrate (
 
 P0 — schema generalize + OpenAI pivot. Ids are monotonic, not positional: T12–T14 (dependent-module ports) are appended but run mid-phase. **P0 exec order (dependency-correct, I hand-drive — ⊥ `--next` id-order):** T1 → T2 → T15 → T3 → T12 → T13 → T14 → T4 → T5 → T6 → T7 → T8 → T9 → T10(gate) → T11. (T15 = DB rename, independent housekeeping, runs now.) Schema/tags + ports land before the OpenAI pivot so the suite compiles; gate last. **T16 = P1 originally** (dashboard SPA redesign) — re-gated by T34 reassessment per rescope; status held at `.` until T34 decides build-or-prune.
 
-**P0.5+ exec order (rescope 2026-05-26):** P0.5: T19 → T17 → T18 → T20 (seed/startup cleanup → service ports → anki ports → test rewrite). P1: T21 → T22 → T23. P2: T24 → T25 → T26 → T27 (models+migrations → deps → service seams → tests). P3: T28 → T29 → T30 (recall → grounded gen → persist). P4: T31 → T32 → T33 → T34 (discriminator persist → Notion write-back → adapter expansion → SPA reassessment). See FORMAT.md for `st` legend.
+**P0.5+ exec order (rescope 2026-05-26):** P0.5: T19 → T17 → T18 → T20 → T35 (seed/startup cleanup → service ports → anki ports → legacy-schema test prune → OpenAI-SDK test reshape). P1: T21 → T22 → T23. P2: T24 → T25 → T26 → T27 (models+migrations → deps → service seams → tests). P3: T28 → T29 → T30 (recall → grounded gen → persist). P4: T31 → T32 → T33 → T34 (discriminator persist → Notion write-back → adapter expansion → SPA reassessment). See FORMAT.md for `st` legend.
 
 | id | st | goal | cites |
 |-----|----|------|-------|
@@ -311,6 +311,7 @@ P0 — schema generalize + OpenAI pivot. Ids are monotonic, not positional: T12�
 | T32 | . | (P4) Notion page/block append+update as one-way replica over `notion_pages` pointer; backlinks question/node anchors; idempotent re-sync; ⊥ read-back | V-N1,V-N2,V-M3 |
 | T33 | . | (P4) expand source adapters under `app/services/adapters/`: manual entry → web-Qbank (extension) → PDF question-set parser (hardest, last); only after write-back stable | I.captures,§A |
 | T34 | . | (P4) reassess T16 SPA redesign: if stabilized `/api/v1/*` contracts (node-based reads + KB substrate + write-back) justify, invoke `frontend-design` plugin per view and flip T16 to `~`; otherwise prune T16 | V-D1,§A |
+| T35 | . | (P0.5) rewrite per-extractor tests (`test_categorizer_llm`, `test_anki_topic_resolver`, `test_feature_extractor`, `test_synthesizer`, `test_analyzer_endpoint`, `test_scheduler`, `tests/web/dashboard/test_insights`) onto OpenAI SDK boundary via `tests/_openai_mocks.py`; drop V38 `cache_control` asserts; `ToolUseBlock` isinstance → `response_format` json_schema content reads; mark `tests/test_llm_batch.py` skip-all (batch retired in T4); T4 follow-up the smoke test stood in for | V16,V38,V45 |
 
 ## §B — bug log
 

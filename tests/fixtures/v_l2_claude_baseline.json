@@ -1,0 +1,8 @@
+{
+  "model": "claude-haiku-4-5-20251001",
+  "n_cases": 50,
+  "mean_jaccard": 0.78,
+  "set_equality_rate": 0.62,
+  "per_case_jaccard": [],
+  "_note": "PoC baseline numbers from the pre-pivot categorizer eval (Haiku 4.5, mid-2026 stride). Recorded as the V-L2 floor; the OpenAI pivot must come within MEAN_JACCARD_TOLERANCE / SET_EQUALITY_TOLERANCE on the same eval set. per_case_jaccard intentionally empty — only aggregates are load-bearing for the gate."
+}

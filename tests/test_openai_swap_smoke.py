@@ -42,28 +42,24 @@ def empty_lookup() -> OutlineLookup:
 
 
 async def test_categorizer_swap_returns_parsed_suggestions(empty_lookup):
-    """V45 reworked: OpenAI function tool with strict args → parsed dict."""
+    """T6 + V45 reworked: OpenAI `response_format: json_schema, strict:true`."""
     q = _question()
-    completion = make_completion(
-        tool_calls=[
-            make_tool_call(
-                "submit_aamc_categorization",
-                {
-                    "primary_aamc_section": "CP",
-                    "tags": [
-                        {
-                            "kind": "skill",
-                            "topic_id": None,
-                            "content_category_code": None,
-                            "skill_number": 2,
-                            "confidence": 0.95,
-                            "rationale": "calc",
-                        }
-                    ],
-                },
-            )
-        ]
-    )
+    payload = {
+        "primary_aamc_section": "CP",
+        "tags": [
+            {
+                "kind": "skill",
+                "topic_id": None,
+                "content_category_code": None,
+                "skill_number": 2,
+                "confidence": 0.95,
+                "rationale": "calc",
+            }
+        ],
+    }
+    import json as _json
+
+    completion = make_completion(content=_json.dumps(payload))
     client = make_client(completion)
 
     result = await categorizer_llm.categorize(
@@ -74,27 +70,24 @@ async def test_categorizer_swap_returns_parsed_suggestions(empty_lookup):
 
     client.chat.completions.create.assert_awaited_once()
     kwargs = client.chat.completions.create.await_args.kwargs
-    # OpenAI chat-completions shape: messages list, tools list of {type:function,...}.
+    # T6: response_format json_schema is the structured-output seam.
     assert kwargs["model"] == categorizer_llm._model()
-    assert kwargs["tool_choice"]["type"] == "function"
-    assert kwargs["tool_choice"]["function"]["name"] == "submit_aamc_categorization"
-    assert kwargs["tools"][0]["type"] == "function"
-    assert kwargs["tools"][0]["function"]["strict"] is True
-    # No Anthropic `system=` array — V38 retired, single system message instead.
+    rf = kwargs["response_format"]
+    assert rf["type"] == "json_schema"
+    assert rf["json_schema"]["name"] == "submit_aamc_categorization"
+    assert rf["json_schema"]["strict"] is True
+    # Single system message (V38 retired — no array shape).
     assert any(m["role"] == "system" for m in kwargs["messages"])
-    # V-L1: usage cached_tokens read from prompt_tokens_details, not inferred.
     assert result.suggestions[0].kind == "skill"
     assert result.suggestions[0].identifier == 2
     assert result.primary_aamc_section == "CP"
     assert result.cache_hit is False
 
 
-async def test_categorizer_swap_falls_back_when_no_tool_call(empty_lookup):
-    """When the model returns prose instead of a tool call, `categorize`
-    surfaces parse_warnings and an empty suggestions list (unchanged behavior
-    from the Anthropic path)."""
+async def test_categorizer_swap_falls_back_when_no_structured_output(empty_lookup):
+    """Empty content surfaces parse_warnings + empty suggestions list."""
     q = _question()
-    completion = make_completion(tool_calls=[], content="(I'd refuse)")
+    completion = make_completion(content=None)
     client = make_client(completion)
 
     result = await categorizer_llm.categorize(
@@ -104,15 +97,15 @@ async def test_categorizer_swap_falls_back_when_no_tool_call(empty_lookup):
     )
 
     assert result.suggestions == []
-    assert any("did not call" in w for w in result.parse_warnings)
+    assert any("did not produce" in w for w in result.parse_warnings)
 
 
-def test_categorizer_tool_def_drops_cache_control():
-    """V38 retired: no `cache_control` markers on the OpenAI function tool."""
-    tool = categorizer_llm._tool_def_for_section("CP")
-    assert tool["type"] == "function"
-    assert "cache_control" not in tool
-    assert "cache_control" not in tool["function"]
+def test_categorizer_response_format_drops_cache_control():
+    """V38 retired: no `cache_control` markers on the response_format envelope."""
+    rf = categorizer_llm._tool_def_for_section("CP")
+    assert rf["type"] == "json_schema"
+    assert "cache_control" not in rf
+    assert "cache_control" not in rf["json_schema"]
 
 
 def test_categorizer_pricing_table_is_openai_only():

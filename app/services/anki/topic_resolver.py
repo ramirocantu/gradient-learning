@@ -255,7 +255,7 @@ def _tool_def_for_cc(cc_code: str, topic_paths: list[str]) -> dict[str, Any]:
         },
     }
 
-    parameters = {
+    schema = {
         "type": "object",
         "required": ["decline", "topic_picks"],
         "additionalProperties": False,
@@ -271,15 +271,16 @@ def _tool_def_for_cc(cc_code: str, topic_paths: list[str]) -> dict[str, Any]:
             },
         },
     }
-    # V45: OpenAI function-tool with strict grammar-constrained sampling.
+    # V45 (T6): structured output via `response_format: json_schema, strict:true`.
+    # V44 keeps the int-enum so the schema stays under OpenAI's limits.
     # V38 retired — no `cache_control`; OpenAI auto-caches stable prefixes.
     return {
-        "type": "function",
-        "function": {
+        "type": "json_schema",
+        "json_schema": {
             "name": "submit_anki_topic",
             "description": f"Tag card with AAMC topic IDs under {cc_code}.",
             "strict": True,
-            "parameters": parameters,
+            "schema": schema,
         },
     }
 
@@ -318,19 +319,16 @@ def _compute_cost(
     )
 
 
-def _extract_tool_call(completion: ChatCompletion) -> dict[str, Any] | None:
-    """Return parsed `arguments` of the first `submit_anki_topic` tool call."""
+def _extract_structured_output(completion: ChatCompletion) -> dict[str, Any] | None:
+    """Return parsed JSON body of a `response_format: json_schema` answer."""
     choice = completion.choices[0] if completion.choices else None
-    if choice is None or choice.message is None:
+    if choice is None or choice.message is None or not choice.message.content:
         return None
-    for call in choice.message.tool_calls or []:
-        if call.function and call.function.name == "submit_anki_topic":
-            try:
-                return _json.loads(call.function.arguments or "{}")
-            except _json.JSONDecodeError as exc:
-                logger.warning("resolve_topic: tool arguments not valid JSON: %s", exc)
-                return None
-    return None
+    try:
+        return _json.loads(choice.message.content)
+    except _json.JSONDecodeError as exc:
+        logger.warning("resolve_topic: response content not valid JSON: %s", exc)
+        return None
 
 
 def _system_block_for_cc(cc_code: str, topic_paths: list[str]) -> str:
@@ -434,7 +432,7 @@ async def resolve_topic(
             )
 
     system_block = _system_block_for_cc(cc_code, topic_paths)
-    tool = _tool_def_for_cc(cc_code, topic_paths)
+    response_format = _tool_def_for_cc(cc_code, topic_paths)
 
     completion = await openai_client.chat.completions.create(
         model=resolved_model,
@@ -443,14 +441,10 @@ async def resolve_topic(
             {"role": "system", "content": system_block},
             {"role": "user", "content": _build_user_message(filtered_tags, card_text)},
         ],
-        tools=[tool],
-        tool_choice={
-            "type": "function",
-            "function": {"name": "submit_anki_topic"},
-        },
+        response_format=response_format,
     )
 
-    payload = _extract_tool_call(completion) or {}
+    payload = _extract_structured_output(completion) or {}
     picks: list[TopicPick] = []
     if payload:
         declined = bool(payload.get("decline", False))

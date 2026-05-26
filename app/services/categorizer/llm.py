@@ -153,12 +153,14 @@ def _tool_def_for_section(section_code: str) -> dict[str, Any]:
     if cc_codes:
         cc_property["enum"] = cc_codes
 
-    # OpenAI function-tool shape. V45 (reworked): `strict: true` enables
-    # grammar-constrained sampling on chat-completions tool calls. JSON-schema
-    # subset honored: `additionalProperties:false`, no min/max on numbers,
-    # no `minItems`/`maxItems`. V44's int-encoded `topic_id` keeps the schema
-    # under OpenAI's enum-size limit. V38 retired — no `cache_control`.
-    parameters = {
+    # V45 (T6): structured output via `response_format: json_schema, strict:true`.
+    # JSON-schema subset honored: `additionalProperties:false` on every object,
+    # no `minimum`/`maximum` on numbers, no `minItems`/`maxItems`, every key in
+    # `properties` listed in `required`. V44 keeps `topic_id` an int enum so the
+    # schema stays under OpenAI's enum-size + enum-string-length limits
+    # (string-enum of ~500 topic_paths would exceed the per-schema enum-string
+    # total length cap). V38 retired — no `cache_control`.
+    schema = {
         "type": "object",
         "required": ["primary_aamc_section", "tags"],
         "additionalProperties": False,
@@ -207,12 +209,12 @@ def _tool_def_for_section(section_code: str) -> dict[str, Any]:
         },
     }
     return {
-        "type": "function",
-        "function": {
+        "type": "json_schema",
+        "json_schema": {
             "name": "submit_aamc_categorization",
             "description": "Tag question with AAMC topics, CCs, skills.",
             "strict": True,
-            "parameters": parameters,
+            "schema": schema,
         },
     }
 
@@ -297,25 +299,21 @@ def _format_user_message(question: Question) -> str:
     return f"Tags:\n{raw_tags}\n\nQ:\n{stem}{expl_block}\n"
 
 
-def _extract_tool_call(completion: ChatCompletion) -> dict[str, Any] | None:
-    """Return the parsed `arguments` dict for the
-    `submit_aamc_categorization` tool call, or None.
+def _extract_structured_output(completion: ChatCompletion) -> dict[str, Any] | None:
+    """Return the parsed JSON body of a `response_format: json_schema` answer.
 
-    OpenAI returns `tool_calls[].function.arguments` as a JSON string under
-    strict mode (the SDK does not parse it for us). We `json.loads` once here
-    and return the dict; downstream `_parse_tool_input` is shape-agnostic.
+    Under strict mode the model emits a JSON document in `choice.message.content`
+    that conforms to the supplied schema. We `json.loads` once and return the
+    dict; downstream `_parse_tool_input` is shape-agnostic.
     """
     choice = completion.choices[0] if completion.choices else None
-    if choice is None or choice.message is None:
+    if choice is None or choice.message is None or not choice.message.content:
         return None
-    for call in choice.message.tool_calls or []:
-        if call.function and call.function.name == "submit_aamc_categorization":
-            try:
-                return json.loads(call.function.arguments or "{}")
-            except json.JSONDecodeError as exc:
-                logger.warning("categorize: tool arguments not valid JSON: %s", exc)
-                return None
-    return None
+    try:
+        return json.loads(choice.message.content)
+    except json.JSONDecodeError as exc:
+        logger.warning("categorize: response content not valid JSON: %s", exc)
+        return None
 
 
 def _parse_tool_input(
@@ -557,7 +555,7 @@ async def categorize(
     # message preserving order (preamble first, then the cacheable outline).
     system_text = _SYSTEM_PROMPT_PREAMBLE + "\n\n" + system_block_2_text
     user_message = _format_user_message(question)
-    tool_def = _tool_def_for_section(section_code)
+    response_format = _tool_def_for_section(section_code)
 
     response = await openai_client.chat.completions.create(
         model=resolved_model,
@@ -566,11 +564,7 @@ async def categorize(
             {"role": "system", "content": system_text},
             {"role": "user", "content": user_message},
         ],
-        tools=[tool_def],
-        tool_choice={
-            "type": "function",
-            "function": {"name": "submit_aamc_categorization"},
-        },
+        response_format=response_format,
     )
 
     usage = response.usage
@@ -589,9 +583,9 @@ async def categorize(
         model=resolved_model,
     )
 
-    tool_args = _extract_tool_call(response)
+    tool_args = _extract_structured_output(response)
     if tool_args is None:
-        msg = "LLM did not call submit_aamc_categorization"
+        msg = "LLM did not produce structured submit_aamc_categorization output"
         logger.warning("categorize qid=%s: %s", question.qid, msg)
         result = CategorizeResult(
             suggestions=[],

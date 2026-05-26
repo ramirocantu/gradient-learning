@@ -224,13 +224,13 @@ _TOOL_PARAMETERS = {
         },
 }
 
-_TOOL = {
-    "type": "function",
-    "function": {
+_RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {
         "name": "submit_question_features",
         "description": "Submit content-agnostic features about an MCAT question.",
         "strict": True,
-        "parameters": _TOOL_PARAMETERS,
+        "schema": _TOOL_PARAMETERS,
     },
 }
 
@@ -361,19 +361,16 @@ def make_features_cache_key(
     return h.hexdigest()
 
 
-def _extract_tool_call(completion: ChatCompletion) -> dict[str, Any] | None:
-    """Return parsed JSON args of the `submit_question_features` tool call."""
+def _extract_structured_output(completion: ChatCompletion) -> dict[str, Any] | None:
+    """Return parsed JSON body of a `response_format: json_schema` answer."""
     choice = completion.choices[0] if completion.choices else None
-    if choice is None or choice.message is None:
+    if choice is None or choice.message is None or not choice.message.content:
         return None
-    for call in choice.message.tool_calls or []:
-        if call.function and call.function.name == "submit_question_features":
-            try:
-                return json.loads(call.function.arguments or "{}")
-            except json.JSONDecodeError as exc:
-                logger.warning("extract_features: tool args not valid JSON: %s", exc)
-                return None
-    return None
+    try:
+        return json.loads(choice.message.content)
+    except json.JSONDecodeError as exc:
+        logger.warning("extract_features: response content not valid JSON: %s", exc)
+        return None
 
 
 def _parse_tool_input(
@@ -555,7 +552,7 @@ async def extract_judgment_features(
 
     user_message = _format_user_message(question, passage, mechanical)
 
-    # V38 retired: OpenAI auto-caches stable prefixes; no `cache_control`.
+    # T6 + V45 reworked: structured output via response_format json_schema.
     response = await openai_client.chat.completions.create(
         model=resolved_model,
         max_completion_tokens=MAX_TOKENS,
@@ -563,11 +560,7 @@ async def extract_judgment_features(
             {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user", "content": user_message},
         ],
-        tools=[_TOOL],
-        tool_choice={
-            "type": "function",
-            "function": {"name": "submit_question_features"},
-        },
+        response_format=_RESPONSE_FORMAT,
     )
 
     usage = response.usage
@@ -586,9 +579,9 @@ async def extract_judgment_features(
     )
     input_tokens = prompt_tokens
 
-    tool_args = _extract_tool_call(response)
+    tool_args = _extract_structured_output(response)
     if tool_args is None:
-        msg = "LLM did not call submit_question_features"
+        msg = "LLM did not produce structured submit_question_features output"
         logger.warning("extract_features qid=%s: %s", question.qid, msg)
         # Fall back to a safe default block so downstream UPSERT can still proceed.
         fallback = LlmJudgmentFeatures(

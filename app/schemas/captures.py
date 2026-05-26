@@ -71,6 +71,9 @@ class ParsedCapture(BaseModel):
 class CapturePayload(BaseModel):
     model_config = _STRICT
 
+    # Source discriminator (§A) — routes to the matching source adapter.
+    # Defaults to uworld for back-compat with the current extension.
+    source: str = "uworld"
     qid: str
     uworld_test_id: Optional[str] = None
     captured_at: datetime

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_session, verify_coach_token
 from app.schemas.captures import CapturePayload, IngestResponse
+from app.services.adapters import UnknownSourceError
 from app.services.ingest import ingest_capture
 
 router = APIRouter()
@@ -18,4 +19,7 @@ async def post_capture(
     session: AsyncSession = Depends(get_session),
     _: None = Depends(verify_coach_token),
 ) -> IngestResponse:
-    return await ingest_capture(payload, session)
+    try:
+        return await ingest_capture(payload, session)
+    except UnknownSourceError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc

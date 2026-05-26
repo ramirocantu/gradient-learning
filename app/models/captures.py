@@ -25,7 +25,8 @@ from app.database import Base
 class RawCapture(Base):
     __tablename__ = "raw_captures"
     __table_args__ = (
-        CheckConstraint("source IN ('uworld')", name="ck_raw_captures_source"),
+        # Open source discriminator (§A): no closed enum — any registered
+        # source adapter may write captures (uworld = reference adapter).
         Index("ix_raw_captures_qid", "qid"),
         Index("ix_raw_captures_captured_at", "captured_at"),
         Index(
@@ -80,6 +81,7 @@ class Question(Base):
     __tablename__ = "questions"
     __table_args__ = (
         Index("ix_questions_passage_id", "passage_id"),
+        Index("ix_questions_source", "source"),
         Index(
             "ix_questions_needs_categorization",
             "id",
@@ -88,6 +90,10 @@ class Question(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # Open source discriminator (§A plugin seam). `qid` stays the external key
+    # for now; §I's rename to external_id + UQ(source, external_id) folds into
+    # the T12–T14 reader ports.
+    source: Mapped[str] = mapped_column(Text, nullable=False, server_default="uworld")
     qid: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     passage_id: Mapped[Optional[int]] = mapped_column(
         Integer,
@@ -127,6 +133,7 @@ class Attempt(Base):
         Index("ix_attempts_attempted_at", "attempted_at"),
         Index("ix_attempts_question_attempted", "question_id", "attempted_at"),
         Index("ix_attempts_uworld_test_id", "uworld_test_id"),
+        Index("ix_attempts_source", "source"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -135,6 +142,9 @@ class Attempt(Base):
         ForeignKey("questions.id", ondelete="CASCADE"),
         nullable=False,
     )
+    # Open source discriminator (§A). §I's uworld_test_id→session_ref rename
+    # folds into the T12–T14 ports.
+    source: Mapped[str] = mapped_column(Text, nullable=False, server_default="uworld")
     attempted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     selected_choice: Mapped[str] = mapped_column(Text, nullable=False)
     is_correct: Mapped[bool] = mapped_column(Boolean, nullable=False)

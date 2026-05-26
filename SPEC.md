@@ -250,7 +250,7 @@ P0 — schema generalize + OpenAI pivot. Ids are monotonic, not positional: T12�
 |-----|----|------|-------|
 | T1 | x | collapse Section/FC/CC/Topic → `courses` + recursive `outline_nodes` (kind/depth/position); migration + SQLAlchemy models | V-O1,V-O4,I.schema |
 | T2 | x | retarget tags → `node_id`; canonical `<target>_tags` shape on `question_tags` + `anki_note_tags` (atomic_fact/notion_page tags = P2, tables not built); retire PoC 3-target (topic/cc/skill); `source` enum → {schema_map,llm,manual}; confidence NULL-able + `manual_review` | V-T1,V-T2,V-T3,I.schema |
-| T3 | . | open `source` discriminator enum on questions/attempts; `/api/v1/captures` routes to source adapter registry | I.api,§A |
+| T3 | x | open `source` discriminator enum on questions/attempts; `/api/v1/captures` routes to source adapter registry | I.api,§A |
 | T4 | . | swap `anthropic`→`openai` SDK in `services/llm/`; retire V38 `cache_control` markers; `AsyncOpenAI(max_retries≥5)`; mock OpenAI at SDK boundary in tests | V38,V41,V16,V-L1,§C |
 | T5 | . | P0 spike: pick `OPENAI_MODEL` + `OPENAI_CALIBRATOR_MODEL` (logprobs-capable, non-reasoning chat model); record in `.env.example` | §C,§O |
 | T6 | . | structured output rework: OpenAI `response_format: json_schema, strict:true`; int-encode large enums before strict (honor enum-count/length limits); dual-surface NL list + `[1..N]` enum; server-side belt retained | V44,V45 |

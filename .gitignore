@@ -53,6 +53,7 @@ postgres-data/
 data/
 .venv
 .claude/
+.junie/
 
 # Local editor / tooling caches
 .codegraph/

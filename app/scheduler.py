@@ -77,10 +77,18 @@ async def _do_run_categorizer() -> None:
         async with AsyncSessionLocal() as session:
             run_row = await session.get(TaskRun, run_id)
             if run_row is not None:
+                # V41 amended: partial_failure still ⇒ status='succeeded'. The
+                # error_text surfaces the transient cause so /admin shows it
+                # without paging on a non-fatal blip.
                 run_row.status = TaskRunStatus.succeeded
                 run_row.items_processed = summary.processed
                 run_row.cost_usd = summary.total_cost_usd
                 run_row.finished_at = datetime.now(timezone.utc)
+                if summary.partial_failure and summary.error:
+                    run_row.error_text = (
+                        f"partial: broke on transient API error after "
+                        f"{summary.succeeded} questions — {summary.error}"
+                    )[:2000]
             await session.commit()
 
         logger.info("run_categorizer finished: %s", summary.as_text())

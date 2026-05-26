@@ -11,7 +11,12 @@ import logging
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable
 
-from openai import AsyncOpenAI
+from openai import (
+    APIError,
+    AsyncOpenAI,
+    InternalServerError,
+    RateLimitError,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -67,6 +72,12 @@ class WorkerSummary:
     cost_limit_hit: bool = False
     max_cost_usd: float | None = None
     model: str = ""
+    # V41 (amended): set when a transient OpenAI error broke the loop early.
+    # Scheduler sees this and tags the task_run with a non-fatal note while
+    # still committing succeeded work + setting status='succeeded'. Candidate
+    # filter resumes the unprocessed remainder on the next run.
+    partial_failure: bool = False
+    error: str | None = None
 
     def as_text(self) -> str:
         suffix = " (DRY RUN — nothing committed)" if self.dry_run else ""
@@ -207,6 +218,24 @@ async def run(
                 logger.warning("qid=%s disappeared mid-run; skipping", qid)
                 summary.failed += 1
                 summary.failure_qids.append(qid)
+            except (APIError, RateLimitError, InternalServerError) as exc:
+                # V41 amended: transient OpenAI errors break the loop early.
+                # The SDK already retried max_retries times; further per-item
+                # retries here would burn budget. Mark partial + return so the
+                # scheduler commits the already-succeeded work and sets
+                # status='succeeded'. Next scheduler tick picks up the rest
+                # via the `needs_categorization=true` candidate filter.
+                logger.warning(
+                    "transient OpenAI error on qid=%s after SDK retries: %s; "
+                    "breaking early with partial_failure",
+                    qid,
+                    exc,
+                )
+                summary.partial_failure = True
+                summary.error = f"{type(exc).__name__}: {exc}"[:500]
+                if dry_run:
+                    await session.rollback()
+                return summary
             except Exception as exc:  # noqa: BLE001
                 logger.exception("failed to tag qid=%s: %s", qid, exc)
                 summary.failed += 1

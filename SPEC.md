@@ -17,6 +17,8 @@ Workflow:
 
 Architecture = **core + periphery**. The core is domain-blind. Everything MCAT-specific (AAMC outline, UWorld capture, AnKing tag shape) is a *plugin* — proving the seam, not privileged.
 
+**Primary loop = PKM (rescoped 2026-05-26).** Question review → discriminator factors → grounded atomic facts → Notion write-back is the load-bearing workflow. Study-plan / recommender surfaces (`app/services/recommender.py`, plan/calendar views) are non-critical; candidate-for-cut unless they directly serve the PKM loop. Raw mastery + Anki + tutor/QBank facts survive (they feed the loop).
+
 ## §A — architecture (core vs plugin)
 
 **CORE (engine, domain-blind):**
@@ -30,7 +32,7 @@ Architecture = **core + periphery**. The core is domain-blind. Everything MCAT-s
 - Notion writer (write-out + pointer index; no read-back).
 - LLM tagging engine (OpenAI, behind `services/llm/`).
 - MCP data + persist tools.
-- JSON API (`/api/v1/*`) = the dashboard's sole data seam. Dashboard is a **client**, not core: P0 = server-rendered Jinja, P1 = React+Tailwind SPA (T16) over the same API. Swapping the view layer ⊥ touch core; the API contract is the boundary.
+- JSON API (`/api/v1/*`) = the dashboard's sole data seam. Dashboard is a **client**, not core: P0–P3 = server-rendered Jinja (thin client). SPA (T16) **deferred to P4 reassessment (T34)** — only built once `/api/v1/*` contracts stabilize across node-based reads, KB substrate, and write-back. Swapping the view layer ⊥ touch core; the API contract is the boundary.
 
 **PLUGINS (periphery, registry-keyed):**
 - **Source adapters** — `capture → normalized {Question, Attempt}`, keyed by `source`. UWorld = reference adapter. Also: generic web-Qbank (extension), manual entry, PDF question-set parser.
@@ -57,6 +59,8 @@ Seam = the normalized internal model + adapter registries keyed on `source` / `c
 - Cognitive-safety (hard rule): AI tags / summarizes / links / drafts; ⊥ generate primary active-recall questions or flashcards.
 - MCP role: data exposure + structured writes; LLM (host) = reasoner. ⊥ heuristics in tool signatures. Socratic dialogue host-side; discriminator tool persists only.
 - `Attempt.time_seconds` ⊥ actionable (carried hard constraint).
+- **Residual P0 tech debt (rebaseline 2026-05-26):** `app/services/anki/{queries,state,retention}.py` still reference `topic_id` / `cc_code` / `topics` / `content_categories`; `app/services/{analytics,recommender,analyzer,tutor/outline}.py` + `app/web/dashboard/services/{mastery,drilldown,anki_scope}.py` self-document as stubs / partial ports; `app/startup.py` still calls `scripts/seed_outline.py` which is a no-op stub. Treat as blocking debt — P0.5 gate clears it (V-RB1..V-RB4).
+- **KB substrate gap:** §I schema specifies `pdf_sources`, `atomic_facts`, `content_embeddings`, `concept_edges`, `notion_pages` but no SQLAlchemy models, Alembic migrations, or `pyproject.toml` deps (pgvector / notion-client / PyMuPDF/pdfplumber) exist yet. P2 lands the substrate before P3 workflow (V-KB1, V-KB2).
 
 ## §I — interfaces
 
@@ -226,15 +230,38 @@ NOTION_API_TOKEN ; NOTION_WIKI_DB_ID    # ⊥ commit
 - V-M2: AI ⊥ generate primary active-recall questions or flashcards (cognitive-safety hard rule).
 
 **Dashboard / API seam**
-- V-D1: dashboard is a client over the public JSON API (`/api/v1/*`) — its sole data seam. ⊥ dashboard-only backend endpoints; a view needing new data extends the public API, ⊥ a private route. View-layer swap (Jinja → SPA, T16) ⊥ touch core. The API contract is the boundary (carries §A).
+- V-D1: dashboard is a client over the public JSON API (`/api/v1/*`) — its sole data seam. ⊥ dashboard-only backend endpoints; a view needing new data extends the public API, ⊥ a private route. View-layer swap (Jinja → SPA, T16) ⊥ touch core. The API contract is the boundary (carries §A). SPA work gated by T34 reassessment, ⊥ launched before node-based reads + KB substrate + write-back stable.
+
+**Outline / node-based reads (extend)**
+- V-O5: core read paths key on `node_id` / `outline_nodes` + subtree rollup via `app/services/outline_subtree.py`. ⊥ `topic_id` / `cc_code` / legacy `topics` / `content_categories` joins in `app/services/{categorizer,tutor,analytics,recommender,analyzer,anki}/...` or `app/web/dashboard/services/*`. Surfaces still on legacy joins = explicitly fenced off critical path or removed.
+- V-O6: outline import (`POST /api/v1/courses/{id}/outline:import`) = sole canonical onboarding. `scripts/seed_outline.py` is no-op stub; `app/startup.py` ⊥ call it. Seed restoration = re-upload `seeds/aamc_outline.schema.json` via importer.
+
+**Rebaseline (P0.5 gate)**
+- V-RB1: no service in `app/services/{analytics,recommender,analyzer,tutor/outline}.py` or `app/web/dashboard/services/{mastery,drilldown,anki_scope}.py` self-documents as stub / partial port. Either ported to OutlineNode + subtree rollup, or explicitly fenced (commented + route-disabled + test-skipped) per rescope.
+- V-RB2: `app/services/anki/{queries,state,retention}.py` contain zero references to `topic_id`, `cc_code`, `topics`, `content_categories` — or surface fenced out of critical path.
+- V-RB3: `app/startup.py` ⊥ call `scripts/seed_outline.py`; startup behavior reconciled with `app/api/v1/outline.py` import flow (no implicit seed; explicit upload required).
+- V-RB4: legacy tests referencing `Topic` / `ContentCategory` / `cc_code` rewritten to OutlineNode + subtree rollup, or removed if testing pruned surfaces.
+
+**Knowledge-base substrate (P2 gate)**
+- V-KB1: P2 substrate (`pdf_sources`, `atomic_facts`, `content_embeddings`, `concept_edges`, `notion_pages`) ships with SQLAlchemy models + Alembic migrations + idempotent re-run tests **before** any P3 retrieval / grounded-generation work lands. New service seams (PDF ingest/parse, embedding write, similarity-edge derivation, Notion write-out) live under `app/services/` with mocked-SDK contract tests.
+- V-KB2: `pyproject.toml` gains `pgvector`, `notion-client`, PyMuPDF/pdfplumber before P3. Config plumbing (env vars from §I) wired and validated at startup.
+
+**Retrieval (LLM4Tag Phase 1)**
+- V-L3: tagging prompts for atomic facts / questions are constrained by retrieved outline-node candidates (embeddings + `concept_edges.kind='similarity'` + optional few-shot exemplars from prior calibrated tags). ⊥ raw free-form judgment over the full outline. Recall layer feeds candidates; calibrator (V69) scores them.
+
+**MCP write-back**
+- V-M3: discriminator writes via tutor/MCP seam append-only. ⊥ duplicate prior notes (dedupe by `(question_id, factor_text)` hash); question ↔ factor links preserved across re-writes. Notion mirror update (V-N1, V-N2) idempotent — block append, ⊥ page rewrite.
 
 ## §P — phases
 
-- **P0 — schema generalize + OpenAI pivot (≈wk1).** Collapse `Section/FC/CC/Topic` → `Course` + `outline_nodes`; retarget tags to `node_id`; open `source` enum on captures; swap `anthropic`→`openai` SDK across extractors; retire V38, rework V45, amend V41/V16/V69. Reseed AAMC as an uploaded schema. **Gate: V-L2 measurement harness green** (tagging quality vs Claude baseline). No new UX; unblocks all.
-- **P1 — day-1 usable (≈wk2–3).** Outline-schema import endpoint + prompt template + validate/materialize. Anki sync/linking on the real course (reuse). → tag your real Anki deck to your real course. Both reuse-heavy, immediate value. **Dashboard redesign (T16):** whole `app/web/dashboard/` rebuilt as a React+Tailwind SPA via the `frontend-design` plugin, consuming existing `/api/v1/*` JSON; replaces Jinja. Plugin use: invoke the `frontend-design` skill per view, feed it the JSON contract + the current Jinja view as reference, iterate to a production-grade, non-generic aesthetic. Runs after T14 (read-services ported to `node_id`).
-- **P2 — notes → atomic facts → Notion (early semester).** PDF ingest poller → grounded atomic facts → embed + tag → one Notion page per concept + pointer/back-links. Vector recall online.
-- **P3 — practice questions.** Source adapters: web-Qbank (extension) → manual entry → PDF-qset parser (hardest, last). Dashboard performance + resource links per node.
-- **P4 — Socratic MCP.** MCP tools over the data; `write_discriminator_factor`; host-side dialogue. Dashboard chat only if the MCP-host workflow proves clunky.
+Re-sequenced 2026-05-26 per rescope: insert P0.5 stabilization gate; substrate (P2) lands before workflow automation (P3); MCP write-back (P4) precedes SPA reassessment.
+
+- **P0 — schema generalize + OpenAI pivot (≈wk1).** [DONE] Collapse `Section/FC/CC/Topic` → `Course` + `outline_nodes`; retarget tags to `node_id`; open `source` enum on captures; swap `anthropic`→`openai` SDK across extractors; retire V38, rework V45, amend V41/V16/V69. Reseed AAMC as an uploaded schema. **Gate: V-L2 measurement harness green** (tagging quality vs Claude baseline). No new UX; unblocks all.
+- **P0.5 — rebaseline (gate before P1).** Finish `node_id` port for residual read paths (analytics / recommender / analyzer / tutor-outline / dashboard mastery+drilldown+anki_scope) or explicitly fence cut surfaces per rescope (T17). Port `app/services/anki/{queries,state,retention}.py` off `topic_id`/`cc_code` (T18). Reconcile `app/startup.py` + `scripts/seed_outline.py` with outline-import flow — remove stale seed call (T19). Rewrite legacy Topic/CC tests (T20). **Gate: V-RB1..V-RB4 green.** Treats post-P0 stubs as blocking debt, ⊥ hidden detail.
+- **P1 — usable course onboarding + node-based reads (≈wk2–3).** Complete `/api/v1/courses/*` + outline import route/service/test coverage (T21). Extend `app/api/v1/tutor.py` + backing services for node search + outline_subtree traversal without AAMC-only tree shape (T22). Normalize dashboard + anki consumers to public `/api/v1/*` contracts (T23). Anki sync/linking on real course (reuse). Jinja stays as thin client; SPA deferred to P4 reassessment.
+- **P2 — knowledge-base substrate.** Add SQLAlchemy models + Alembic for `pdf_sources`, `atomic_facts`, `content_embeddings`, `concept_edges`, `notion_pages` (T24). Add pgvector + notion-client + PyMuPDF/pdfplumber to `pyproject.toml` + config plumbing (T25). Service seams under `app/services/` for PDF ingest/parse, embedding write+versioning, similarity-edge derivation, Notion write-out (T26). Migration + idempotent-re-run + dim-change contract tests (T27). **Substrate lands before workflow automation.**
+- **P3 — LLM4Tag retrieval + grounded generation.** Recall layer: candidate retrieval from embeddings + `concept_edges` similarity edges + optional few-shot exemplars (T28). Grounded generation + calibrated tagging over PDFs / atomic facts via existing OpenAI patterns + `app/services/llm/calibrator.py` (T29). Persist calibrated outputs to atomic-fact/tag tables with version + `manual_review` (T30). Domain-blind workflow — MCAT/AAMC = domain pack example, not privileged branch.
+- **P4 — QBank synthesis + MCP/Notion write-back + SPA reassessment.** Discriminator-factor persistence via tutor/MCP seam, append-only, link-preserving (T31). Notion page/block append+update as one-way replica over `notion_pages` pointer, backlinks to question/node (T32). Expand source adapters (manual entry / web-Qbank / PDF question-set) under `app/services/adapters/` after write-back stable (T33). **Reassess T16 SPA redesign (T34)** — build React+Tailwind client only if stabilized `/api/v1/*` contracts justify; otherwise prune T16.
 
 ## §O — open items
 - Embeddings provider: OpenAI `text-embedding-3-small` (dim 1536) vs BGE-local (dim 768). Default set to OpenAI for single-provider consistency; confirm.
@@ -244,7 +271,9 @@ NOTION_API_TOKEN ; NOTION_WIKI_DB_ID    # ⊥ commit
 
 ## §T — tasks
 
-P0 — schema generalize + OpenAI pivot. Ids are monotonic, not positional: T12–T14 (dependent-module ports) are appended but run mid-phase. **Exec order (dependency-correct, I hand-drive — ⊥ `--next` id-order):** T1 → T2 → T15 → T3 → T12 → T13 → T14 → T4 → T5 → T6 → T7 → T8 → T9 → T10(gate) → T11. (T15 = DB rename, independent housekeeping, runs now.) Schema/tags + ports land before the OpenAI pivot so the suite compiles; gate last. **T16 = P1** (dashboard redesign), runs after T14 — listed here for monotonic id, not P0 exec order. See FORMAT.md for `st` legend.
+P0 — schema generalize + OpenAI pivot. Ids are monotonic, not positional: T12–T14 (dependent-module ports) are appended but run mid-phase. **P0 exec order (dependency-correct, I hand-drive — ⊥ `--next` id-order):** T1 → T2 → T15 → T3 → T12 → T13 → T14 → T4 → T5 → T6 → T7 → T8 → T9 → T10(gate) → T11. (T15 = DB rename, independent housekeeping, runs now.) Schema/tags + ports land before the OpenAI pivot so the suite compiles; gate last. **T16 = P1 originally** (dashboard SPA redesign) — re-gated by T34 reassessment per rescope; status held at `.` until T34 decides build-or-prune.
+
+**P0.5+ exec order (rescope 2026-05-26):** P0.5: T19 → T17 → T18 → T20 (seed/startup cleanup → service ports → anki ports → test rewrite). P1: T21 → T22 → T23. P2: T24 → T25 → T26 → T27 (models+migrations → deps → service seams → tests). P3: T28 → T29 → T30 (recall → grounded gen → persist). P4: T31 → T32 → T33 → T34 (discriminator persist → Notion write-back → adapter expansion → SPA reassessment). See FORMAT.md for `st` legend.
 
 | id | st | goal | cites |
 |-----|----|------|-------|
@@ -263,7 +292,25 @@ P0 — schema generalize + OpenAI pivot. Ids are monotonic, not positional: T12�
 | T13 | x | port anki layer → `node_id`: `app/services/anki/{topic_resolver_worker,topic_resolver_batch,queries}.py` + assignment/review scope → node_id subtree rollup | V-O1,V-T1 |
 | T15 | x | rename DB `mcat_coach`→`gradient` (+ `mcat_coach_test`→`gradient_test`): docker-compose.yml, .env/.env.example, conftest + schema-test DSNs/db_names; role `mcat` unchanged; stand up fresh `gradient` via `alembic upgrade head` | §C,I.env |
 | T14 | x | port dashboard + read-services → `node_id`: `app/web/dashboard/services/*` (mastery, drilldown, sessions, anki_scope) + routes/questions + utils, `app/services/{analytics,recommender}.py`, `app/services/analyzer/*`, `app/services/tutor/*`; shared subtree-rollup helper (V-O1 set rollup) | V-O1,V-T1,V-E2 |
-| T16 | . | (P1, after T14) redesign whole dashboard via `frontend-design` plugin → React+Tailwind SPA over existing `/api/v1/*` JSON (mastery, node drilldown, sessions, anki-scope, outline-import view); replaces Jinja `app/web/dashboard/`; backend stays FastAPI serving JSON; invoke `frontend-design` skill per view (feed JSON contract + current Jinja view as ref); node rollup = subtree set (V-O1) | §C,I.api,V-O1,V-D1 |
+| T16 | . | (P1 originally; re-gated by T34 reassessment) redesign whole dashboard via `frontend-design` plugin → React+Tailwind SPA over existing `/api/v1/*` JSON (mastery, node drilldown, sessions, anki-scope, outline-import view); replaces Jinja `app/web/dashboard/`; backend stays FastAPI serving JSON; invoke `frontend-design` skill per view (feed JSON contract + current Jinja view as ref); node rollup = subtree set (V-O1) | §C,I.api,V-O1,V-D1 |
+| T17 | . | (P0.5) port `app/services/{analytics,recommender,analyzer,tutor/outline}.py` + `app/web/dashboard/services/{mastery,drilldown,anki_scope}.py` off stubs onto OutlineNode + `outline_subtree`, or explicitly fence off critical path per rescope | V-RB1,V-O5,V-O1 |
+| T18 | . | (P0.5) port `app/services/anki/{queries,state,retention}.py` off `topic_id` / `cc_code` / legacy `topics`/`content_categories` joins onto OutlineNode + `outline_subtree`; or fence off critical path | V-RB2,V-O5,V-O1 |
+| T19 | . | (P0.5) reconcile `app/startup.py` + `scripts/seed_outline.py` with `POST /api/v1/courses/{id}/outline:import` flow; remove stale seed call from startup; seed restoration = explicit re-upload of `seeds/aamc_outline.schema.json` | V-RB3,V-O6 |
+| T20 | . | (P0.5) rewrite or remove legacy tests referencing `Topic` / `ContentCategory` / `cc_code`; suite reflects generalized OutlineNode schema | V-RB4 |
+| T21 | . | (P1) complete `/api/v1/courses/*` + outline import route/service/test coverage: create, re-upload (idempotent), validation failure (atomic reject), node-tree reads | V-O2,V-O3,I.outline-import |
+| T22 | . | (P1) extend `app/api/v1/tutor.py` + backing services for node search + outline_subtree traversal without AAMC-only tree shape; MCP/tutor flows speak `node_id` only | V-O1,V-O3,V-D1,V-M1 |
+| T23 | . | (P1) normalize dashboard + anki consumers to public `/api/v1/*` contracts only; ⊥ dashboard-only backend seam; Jinja stays as thin client until T34 | V-D1 |
+| T24 | . | (P2) add SQLAlchemy models + Alembic migrations for `pdf_sources`, `atomic_facts`, `content_embeddings`, `concept_edges`, `notion_pages` (+ `discriminator_factors` if not yet modeled); register in `app/models/__init__.py` | V-KB1,I.schema |
+| T25 | . | (P2) add `pgvector`, `notion-client`, `PyMuPDF`/`pdfplumber` to `pyproject.toml`; wire config plumbing for `PDF_INBOX_DIR`, `NOTION_API_TOKEN`, `NOTION_WIKI_DB_ID`, `EMBEDDING_MODEL`; startup validation | V-KB2,§C,I.env |
+| T26 | . | (P2) add service seams under `app/services/` for PDF ingest/parse, embedding write+versioning, similarity-edge derivation, Notion write-out; mocked-SDK contract tests per `tests/_openai_mocks.py` pattern; Notion + embedding clients mocked at SDK boundary | V-KB1,V-E1,V-E2,V-N1,V-N2,V16 |
+| T27 | . | (P2) migration + contract tests for new substrate: idempotent re-run; dim change → version bump + re-embed; Notion write idempotent (one-way, append-only) | V-KB1,V-E1,V-N1,V-N2 |
+| T28 | . | (P3) recall layer: candidate retrieval from `content_embeddings` + `concept_edges.kind='similarity'` + optional few-shot exemplars from prior calibrated tags; feeds tagging prompts | V-L3,V-E2 |
+| T29 | . | (P3) grounded generation + calibrated tagging over PDFs / atomic facts via existing OpenAI patterns + `app/services/llm/calibrator.py`; constrained by retrieved candidates (⊥ free-form full-outline judgment) | V-L3,V69,V45,V44 |
+| T30 | . | (P3) persist calibrated outputs to `atomic_facts` + `<target>_tags` tables with `embedding_version` / `extractor_version` stamps + `manual_review` (Conf<0.5) | V-T2,V-T3,V-E1 |
+| T31 | . | (P4) discriminator-factor persistence via tutor/MCP seam: `write_discriminator_factor` + `POST /api/v1/pkm/discriminators`; append-only dedupe by `(question_id, factor_text)` hash; question↔factor links preserved | V-M1,V-M3 |
+| T32 | . | (P4) Notion page/block append+update as one-way replica over `notion_pages` pointer; backlinks question/node anchors; idempotent re-sync; ⊥ read-back | V-N1,V-N2,V-M3 |
+| T33 | . | (P4) expand source adapters under `app/services/adapters/`: manual entry → web-Qbank (extension) → PDF question-set parser (hardest, last); only after write-back stable | I.captures,§A |
+| T34 | . | (P4) reassess T16 SPA redesign: if stabilized `/api/v1/*` contracts (node-based reads + KB substrate + write-back) justify, invoke `frontend-design` plugin per view and flip T16 to `~`; otherwise prune T16 | V-D1,§A |
 
 ## §B — bug log
 

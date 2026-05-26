@@ -1,9 +1,9 @@
-"""In-memory lookup over the seeded AAMC outline.
+"""In-memory path → node_id index over the `outline_nodes` tree.
 
-Built once per request (or once per worker process — see Ticket 3.2).
-Resolves YAML target references (`content_category: "5E"`, `topic: "Energy"`,
-etc.) to the integer primary keys held in the `sections`, `content_categories`,
-and `topics` tables.
+Generalized for Gradient (T12): the PoC's section/cc/topic codes are gone
+(§I outline_nodes has only kind/name). Resolution is by `>>`-delimited path
+(V-O4), e.g. `"CP >> FC1 >> 1A >> Amino acids"`. One lookup instance per
+course; built once per request or per worker.
 """
 
 from __future__ import annotations
@@ -15,189 +15,132 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.outline import ContentCategory, Section, Topic
+from app.models.outline import OUTLINE_PATH_DELIMITER, Course, OutlineNode
 from app.services.categorizer._text import normalize_typographic_punctuation
 
 logger = logging.getLogger(__name__)
 
 
 class OutlineNotSeededError(RuntimeError):
-    """Raised when OutlineLookup loads against an unseeded outline table set.
-
-    Belt-and-suspenders for the auto-seed in `app.startup.ensure_outline_seeded`.
-    If a future entrypoint forgets to call it, the categorizer raises here
-    instead of silently dropping every topic/content_category suggestion.
-    """
+    """Raised when OutlineLookup loads against an unseeded outline_nodes set."""
 
 
 @dataclass(frozen=True)
-class _TopicRow:
+class _Node:
     id: int
     name: str
-    content_category_id: int
-    parent_topic_id: Optional[int]
+    kind: str
+    parent_id: Optional[int]
+    depth: int
 
 
 class OutlineLookup:
-    """Caches the outline tree on construction; provides ID lookups by code/name."""
+    """Path-indexed view of one course's `outline_nodes` subtree (V-O1)."""
 
-    def __init__(
-        self,
-        *,
-        sections_by_code: dict[str, int],
-        ccs_by_code: dict[str, int],
-        topics: list[_TopicRow],
-    ) -> None:
-        self._sections = sections_by_code
-        self._ccs = ccs_by_code
-        self._topics = topics
-        self._cc_code_by_id = {v: k for k, v in ccs_by_code.items()}
-        self._topics_by_id: dict[int, _TopicRow] = {t.id: t for t in topics}
+    def __init__(self, *, course_id: int, nodes: list[_Node]) -> None:
+        self._course_id = course_id
+        self._nodes = nodes
+        self._by_id: dict[int, _Node] = {n.id: n for n in nodes}
+        # Index roots by name for path traversal.
+        self._roots_by_name: dict[str, list[_Node]] = {}
+        for n in nodes:
+            if n.parent_id is None:
+                self._roots_by_name.setdefault(n.name, []).append(n)
+        # children index for path walk.
+        self._children: dict[int, dict[str, list[_Node]]] = {}
+        for n in nodes:
+            if n.parent_id is not None:
+                self._children.setdefault(n.parent_id, {}).setdefault(n.name, []).append(n)
 
     @classmethod
-    async def load(cls, session: AsyncSession) -> "OutlineLookup":
-        sections = (await session.execute(select(Section))).scalars().all()
-        ccs = (await session.execute(select(ContentCategory))).scalars().all()
-        topics = (await session.execute(select(Topic))).scalars().all()
-        if not ccs or not topics:
+    async def load(cls, session: AsyncSession, *, course_slug: str = "aamc") -> "OutlineLookup":
+        course = (
+            await session.execute(select(Course).where(Course.slug == course_slug))
+        ).scalar_one_or_none()
+        if course is None:
             raise OutlineNotSeededError(
-                f"outline tables empty (sections={len(sections)}, "
-                f"content_categories={len(ccs)}, topics={len(topics)}); "
-                "run `uv run python scripts/seed_outline.py` or boot via "
-                "uvicorn so app.startup.ensure_outline_seeded fires"
+                f"no course with slug {course_slug!r}; upload an outline schema "
+                f"via POST /api/v1/courses/{{id}}/outline:import (T9)"
             )
-        return cls(
-            sections_by_code={s.code: s.id for s in sections},
-            ccs_by_code={c.code: c.id for c in ccs},
-            topics=[
-                _TopicRow(
-                    id=t.id,
-                    # Normalize so path lookups match regardless of apostrophe variant.
-                    # The DB row is unchanged; only the in-memory comparison side is ASCII.
-                    name=normalize_typographic_punctuation(t.name),
-                    content_category_id=t.content_category_id,
-                    parent_topic_id=t.parent_topic_id,
-                )
-                for t in topics
-            ],
-        )
-
-    def section_id(self, code: str) -> int | None:
-        return self._sections.get(code)
-
-    def content_category_id(self, code: str) -> int | None:
-        return self._ccs.get(code)
-
-    def topic_id_by_path(self, path: str) -> int | None:
-        """Resolve a `>>`-delimited topic path to a topic ID.
-
-        Format: `"<CC_code> >> <name>"` or `"<CC_code> >> <parent> >> <child>"` etc.
-        Walks the parent-chain in the in-memory topic list. Returns None (with
-        a warning) if any segment fails to resolve uniquely.
-
-        Per §V40, the reserved delimiter is ` >> ` because ` / ` collides with
-        ÷ notation in physics-formula topic names (e.g. `Resistivity: ρ = R•A / L`).
-        """
-        parts = [p.strip() for p in normalize_typographic_punctuation(path).split(" >> ")]
-        if len(parts) < 2 or not parts[0]:
-            logger.warning("topic_id_by_path: malformed path %r", path)
-            return None
-
-        cc_code = parts[0]
-        name_parts = parts[1:]
-
-        cc_id = self._ccs.get(cc_code)
-        if cc_id is None:
-            logger.warning("topic_id_by_path: unknown CC %r in path %r", cc_code, path)
-            return None
-
-        current_parent_id: Optional[int] = None
-        for i, name in enumerate(name_parts):
-            candidates = [
-                t
-                for t in self._topics
-                if t.name == name
-                and t.content_category_id == cc_id
-                and t.parent_topic_id == current_parent_id
-            ]
-            if len(candidates) == 0:
-                logger.warning(
-                    "topic_id_by_path: no topic named %r at segment %d of %r",
-                    name,
-                    i + 1,
-                    path,
-                )
-                return None
-            if len(candidates) > 1:
-                logger.warning(
-                    "topic_id_by_path: ambiguous topic %r at segment %d of %r (%d matches)",
-                    name,
-                    i + 1,
-                    path,
-                    len(candidates),
-                )
-                return None
-            current_parent_id = candidates[0].id
-
-        return current_parent_id
-
-    def topic_id(
-        self,
-        name: str,
-        *,
-        under_content_category: str | None = None,
-        under_topic: str | None = None,
-    ) -> int | None:
-        cc_id: int | None = None
-        if under_content_category is not None:
-            cc_id = self._ccs.get(under_content_category)
-            if cc_id is None:
-                logger.warning(
-                    "topic_id: unknown content_category %r when resolving topic %r",
-                    under_content_category,
-                    name,
-                )
-                return None
-
-        parent_id: int | None = None
-        if under_topic is not None:
-            parent_candidates = [
-                t
-                for t in self._topics
-                if t.name == under_topic and (cc_id is None or t.content_category_id == cc_id)
-            ]
-            if len(parent_candidates) != 1:
-                logger.warning(
-                    "topic_id: parent topic %r is ambiguous or missing (cc=%s, %d matches)",
-                    under_topic,
-                    under_content_category,
-                    len(parent_candidates),
-                )
-                return None
-            parent_id = parent_candidates[0].id
-
-        candidates = [
-            t
-            for t in self._topics
-            if t.name == name
-            and (cc_id is None or t.content_category_id == cc_id)
-            and (under_topic is None or t.parent_topic_id == parent_id)
+        rows = (
+            await session.execute(
+                select(OutlineNode).where(OutlineNode.course_id == course.id)
+            )
+        ).scalars().all()
+        if not rows:
+            raise OutlineNotSeededError(
+                f"course {course_slug!r} has no outline_nodes — import a schema first"
+            )
+        nodes = [
+            _Node(
+                id=n.id,
+                # Normalize so path lookups match regardless of apostrophe variant.
+                name=normalize_typographic_punctuation(n.name),
+                kind=n.kind,
+                parent_id=n.parent_id,
+                depth=n.depth,
+            )
+            for n in rows
         ]
-        if len(candidates) == 1:
-            return candidates[0].id
-        if not candidates:
+        return cls(course_id=course.id, nodes=nodes)
+
+    @property
+    def course_id(self) -> int:
+        return self._course_id
+
+    def node_id_by_path(self, path: str) -> int | None:
+        """Resolve a `>>`-delimited path to a node_id (V-O4).
+
+        Path walks from a root by sibling name at each depth. Returns None
+        (with a warning) on missing/ambiguous segment.
+        """
+        parts = [
+            p.strip()
+            for p in normalize_typographic_punctuation(path).split(OUTLINE_PATH_DELIMITER)
+        ]
+        if not parts or not parts[0]:
+            logger.warning("node_id_by_path: malformed path %r", path)
+            return None
+
+        # Resolve the root segment.
+        root_candidates = self._roots_by_name.get(parts[0], [])
+        if len(root_candidates) != 1:
             logger.warning(
-                "topic_id: no topic named %r (cc=%s, parent=%s)",
-                name,
-                under_content_category,
-                under_topic,
+                "node_id_by_path: root %r %s (path=%r)",
+                parts[0],
+                "ambiguous" if len(root_candidates) > 1 else "missing",
+                path,
             )
             return None
-        logger.warning(
-            "topic_id: ambiguous topic %r (cc=%s, parent=%s, %d matches) — refine the YAML",
-            name,
-            under_content_category,
-            under_topic,
-            len(candidates),
-        )
-        return None
+        current = root_candidates[0]
+
+        # Walk children by name.
+        for i, name in enumerate(parts[1:], start=2):
+            child_candidates = self._children.get(current.id, {}).get(name, [])
+            if len(child_candidates) != 1:
+                logger.warning(
+                    "node_id_by_path: segment %d %r %s under %r (path=%r)",
+                    i,
+                    name,
+                    "ambiguous" if len(child_candidates) > 1 else "missing",
+                    current.name,
+                    path,
+                )
+                return None
+            current = child_candidates[0]
+
+        return current.id
+
+    def node(self, node_id: int) -> _Node | None:
+        return self._by_id.get(node_id)
+
+    def path_of(self, node_id: int) -> str | None:
+        """Inverse of `node_id_by_path` — render a node's path."""
+        n = self._by_id.get(node_id)
+        if n is None:
+            return None
+        segs: list[str] = [n.name]
+        while n.parent_id is not None:
+            n = self._by_id[n.parent_id]
+            segs.append(n.name)
+        return OUTLINE_PATH_DELIMITER.join(reversed(segs))

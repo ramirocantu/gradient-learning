@@ -1,188 +1,121 @@
-"""Tests for OutlineLookup.topic_id_by_path — Ticket 6.8."""
+"""T12 — OutlineLookup resolves node by `>>` path (V-O4) over outline_nodes."""
 
-from __future__ import annotations
+import os
 
+import asyncpg
 import pytest
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-from app.models.outline import ContentCategory, Topic
-from app.services.categorizer.outline_lookup import OutlineLookup
+from app.database import Base
+from app.models.outline import Course, OutlineNode
+from app.services.categorizer.outline_lookup import (
+    OutlineLookup,
+    OutlineNotSeededError,
+)
+
+_HOST_PORT = os.environ.get("HOST_POSTGRES_PORT", "5432")
+_DB_URL = f"postgresql+asyncpg://gradient:gradient_secret@localhost:{_HOST_PORT}/gradient_test"
+_ADMIN_DSN = f"postgresql://gradient:gradient_secret@localhost:{_HOST_PORT}/gradient"
+
+_TABLES = [Course.__table__, OutlineNode.__table__]
 
 
-async def _lookup(session: AsyncSession) -> OutlineLookup:
-    return await OutlineLookup.load(session)
+@pytest.fixture
+async def engine():
+    conn = await asyncpg.connect(_ADMIN_DSN)
+    try:
+        await conn.execute("CREATE DATABASE gradient_test")
+    except asyncpg.exceptions.DuplicateDatabaseError:
+        pass
+    finally:
+        await conn.close()
+
+    eng = create_async_engine(_DB_URL)
+    async with eng.begin() as c:
+        await c.execute(text("DROP SCHEMA public CASCADE"))
+        await c.execute(text("CREATE SCHEMA public"))
+        await c.run_sync(Base.metadata.create_all, tables=_TABLES)
+    yield eng
+    await eng.dispose()
 
 
-async def _topic_id_direct(session: AsyncSession, name: str, cc_code: str) -> int:
-    return (
-        await session.execute(
-            select(Topic.id)
-            .join(ContentCategory, Topic.content_category_id == ContentCategory.id)
-            .where(
-                Topic.name == name,
-                ContentCategory.code == cc_code,
-                Topic.parent_topic_id.is_(None),
+async def _seed_aamc_shape(eng) -> dict[str, int]:
+    """4-deep AAMC instance: section >> fc >> cc >> topic."""
+    async with AsyncSession(eng) as s:
+        c = Course(slug="aamc", name="AAMC MCAT")
+        s.add(c)
+        await s.flush()
+
+        def mk(parent_id, kind, name, depth, pos):
+            n = OutlineNode(
+                course_id=c.id, parent_id=parent_id, kind=kind, name=name,
+                depth=depth, position=pos,
             )
-        )
-    ).scalar_one()
+            s.add(n)
+            return n
+
+        sec = mk(None, "section", "CP", 0, 0); await s.flush()
+        fc1 = mk(sec.id, "fc", "FC1", 1, 0); await s.flush()
+        cc1a = mk(fc1.id, "cc", "1A", 2, 0); await s.flush()
+        t_amino = mk(cc1a.id, "topic", "Amino acids", 3, 0)
+        t_protein = mk(cc1a.id, "topic", "Proteins", 3, 1); await s.flush()
+        fc2 = mk(sec.id, "fc", "FC2", 1, 1); await s.flush()
+        ids = {
+            "sec": sec.id, "fc1": fc1.id, "cc1a": cc1a.id,
+            "amino": t_amino.id, "proteins": t_protein.id, "fc2": fc2.id,
+        }
+        await s.commit()
+        return ids
 
 
-async def test_topic_id_by_path_depth_0(seeded_report, test_engine):
-    async with AsyncSession(bind=test_engine) as s:
-        lookup = await _lookup(s)
-        result = lookup.topic_id_by_path("5A >> Solubility")
-        expected = await _topic_id_direct(s, "Solubility", "5A")
-        assert result == expected
-        assert result is not None
-
-
-async def test_topic_id_by_path_depth_1(seeded_report, test_engine):
-    async with AsyncSession(bind=test_engine) as s:
-        lookup = await _lookup(s)
-        child_path = (
-            "5A >> Solubility >> Solubility product constant; the equilibrium expression Ksp"
-        )
-        child_id = lookup.topic_id_by_path(child_path)
-        assert child_id is not None
-
-        parent_id = lookup.topic_id_by_path("5A >> Solubility")
-        assert parent_id is not None
-
-        # The child topic's parent_topic_id must point to "Solubility"
-        child_row = lookup._topics_by_id[child_id]
-        assert child_row.parent_topic_id == parent_id
-
-
-async def test_topic_id_by_path_unknown_cc(seeded_report, test_engine, caplog):
-    import logging
-
-    async with AsyncSession(bind=test_engine) as s:
-        lookup = await _lookup(s)
-        with caplog.at_level(logging.WARNING, logger="app.services.categorizer.outline_lookup"):
-            result = lookup.topic_id_by_path("9Z >> anything")
-        assert result is None
-        assert any("9Z" in r.message for r in caplog.records)
-
-
-async def test_topic_id_by_path_unknown_segment(seeded_report, test_engine, caplog):
-    import logging
-
-    async with AsyncSession(bind=test_engine) as s:
-        lookup = await _lookup(s)
-        with caplog.at_level(logging.WARNING, logger="app.services.categorizer.outline_lookup"):
-            result = lookup.topic_id_by_path("5A >> Solubility >> not-a-real-child")
-        assert result is None
-        assert any("not-a-real-child" in r.message for r in caplog.records)
-
-
-def test_topic_id_by_path_ambiguous_intermediate_returns_none():
-    # The topics table has a UNIQUE constraint on (content_category_id, parent_topic_id, name),
-    # so ambiguous topic names cannot exist in production data. The test would require
-    # raw SQL to bypass the constraint; per spec, we skip it when the constraint exists.
-    pytest.skip(
-        "UNIQUE constraint uq_topic_cc_parent_name prevents inserting duplicate "
-        "topic names — ambiguity is structurally impossible in this schema."
-    )
-
-
-# --------------------------------------------------------------------------- #
-# Ticket 6.8b — Unicode typographic apostrophe normalization
-# --------------------------------------------------------------------------- #
-
-
-async def test_topic_id_by_path_resolves_straight_apostrophe_against_curly_stored_name(
-    seeded_report, test_engine
-):
-    """LLM echoes straight ' (U+0027); DB stores curly ' (U+2019). Must resolve."""
-    async with AsyncSession(bind=test_engine) as s:
-        lookup = await _lookup(s)
-        # Use straight ASCII apostrophe in input (as LLM would emit)
-        straight_path = (
-            "6B >> Cognition >> Cognitive development >> Piaget's stages of cognitive development"
-        )
-        assert "'" in straight_path  # sanity: path has straight apostrophe
-        result = lookup.topic_id_by_path(straight_path)
-        assert result is not None, (
-            "topic_id_by_path must resolve straight-apostrophe path against curly DB row"
-        )
-        # Verify it's the correct topic (integer ID matches a real DB row)
-        topic_row = (await s.execute(select(Topic).where(Topic.id == result))).scalar_one()
-        assert "Piaget" in topic_row.name
-
-
-# --------------------------------------------------------------------------- #
-# Fail-loud guard — option 3, complements app.startup.ensure_outline_seeded
-# --------------------------------------------------------------------------- #
-
-
-async def test_outline_lookup_raises_on_empty_tables(test_engine):
-    """If a future entrypoint forgets to seed, OutlineLookup must fail loud."""
-    from sqlalchemy import text
-    from sqlalchemy.ext.asyncio import async_sessionmaker
-
-    from app.services.categorizer.outline_lookup import OutlineNotSeededError
-    from app.startup import ensure_outline_seeded
-
-    factory = async_sessionmaker(test_engine, expire_on_commit=False)
-
-    # TRUNCATE ... CASCADE bulldozes any FK-attached user data inserted by
-    # earlier tests in the session. The final ensure_outline_seeded call
-    # re-seeds so subsequent tests see populated outline tables.
-    async with factory() as session:
-        await session.execute(
-            text(
-                "TRUNCATE TABLE topics, content_categories, "
-                "foundational_concepts, sections RESTART IDENTITY CASCADE"
-            )
-        )
-        await session.commit()
-
-    async with factory() as session:
+async def test_load_raises_when_course_missing(engine):
+    async with AsyncSession(engine) as s:
         with pytest.raises(OutlineNotSeededError):
-            await OutlineLookup.load(session)
-
-    await ensure_outline_seeded(session_factory=factory)
+            await OutlineLookup.load(s, course_slug="aamc")
 
 
-async def test_topic_id_by_path_resolves_curly_apostrophe_input(seeded_report, test_engine):
-    """Curly-apostrophe path input resolves to same ID as straight-apostrophe path."""
-    async with AsyncSession(bind=test_engine) as s:
-        lookup = await _lookup(s)
-        straight_path = (
-            "6B >> Cognition >> Cognitive development >> Piaget's stages of cognitive development"
-        )
-        curly_path = (
-            "6B >> Cognition >> Cognitive development >> Piaget’s stages of cognitive development"
-        )
-        id_straight = lookup.topic_id_by_path(straight_path)
-        id_curly = lookup.topic_id_by_path(curly_path)
-        assert id_straight is not None
-        assert id_curly is not None
-        assert id_straight == id_curly, "Both apostrophe variants must resolve to the same topic ID"
+async def test_load_raises_when_course_has_no_nodes(engine):
+    async with AsyncSession(engine) as s:
+        s.add(Course(slug="aamc", name="AAMC"))
+        await s.commit()
+    async with AsyncSession(engine) as s:
+        with pytest.raises(OutlineNotSeededError):
+            await OutlineLookup.load(s, course_slug="aamc")
 
 
-# --------------------------------------------------------------------------- #
-# §V40 / §B5 — slash-in-name regression guard
-# --------------------------------------------------------------------------- #
+async def test_node_id_by_path_resolves_each_depth(engine):
+    ids = await _seed_aamc_shape(engine)
+    async with AsyncSession(engine) as s:
+        lk = await OutlineLookup.load(s, course_slug="aamc")
+    assert lk.node_id_by_path("CP") == ids["sec"]
+    assert lk.node_id_by_path("CP >> FC1") == ids["fc1"]
+    assert lk.node_id_by_path("CP >> FC1 >> 1A") == ids["cc1a"]
+    assert lk.node_id_by_path("CP >> FC1 >> 1A >> Amino acids") == ids["amino"]
+    assert lk.node_id_by_path("CP >> FC1 >> 1A >> Proteins") == ids["proteins"]
+    assert lk.node_id_by_path("CP >> FC2") == ids["fc2"]
 
 
-async def test_topic_id_by_path_resolves_topic_name_containing_slash(seeded_report, test_engine):
-    """§B5 regression: topic `Resistivity: ρ = R•A / L` (CC 4C) contains ` / `
-    in its name. Under the old ` / ` delimiter the parser mis-split the name
-    into two segments and the resolver silently failed. The new ` >> ` delimiter
-    (§V40) must round-trip this name cleanly.
-    """
-    async with AsyncSession(bind=test_engine) as s:
-        lookup = await _lookup(s)
-        # Top-level parent under 4C is "Circuit Elements"; the offending leaf
-        # is a grandchild "Resistivity: ρ = R•A / L" under "Resistance".
-        path = "4C >> Circuit Elements >> Resistance >> Resistivity: ρ = R•A / L"
-        result = lookup.topic_id_by_path(path)
-        assert result is not None, (
-            f"topic_id_by_path must resolve a topic name containing literal "
-            f"` / ` under the ` >> ` delimiter (§V40); got None for {path!r}"
-        )
-        # Verify it's the correct topic row.
-        topic_row = (await s.execute(select(Topic).where(Topic.id == result))).scalar_one()
-        assert "Resistivity" in topic_row.name and "/" in topic_row.name
+async def test_node_id_by_path_missing_segment_returns_none(engine):
+    await _seed_aamc_shape(engine)
+    async with AsyncSession(engine) as s:
+        lk = await OutlineLookup.load(s, course_slug="aamc")
+    assert lk.node_id_by_path("CP >> FC1 >> 1A >> Nope") is None
+    assert lk.node_id_by_path("NoSuchSection") is None
+    # Wrong parent — "Proteins" lives under 1A, not under FC1 directly.
+    assert lk.node_id_by_path("CP >> FC1 >> Proteins") is None
+
+
+async def test_path_of_round_trips(engine):
+    ids = await _seed_aamc_shape(engine)
+    async with AsyncSession(engine) as s:
+        lk = await OutlineLookup.load(s, course_slug="aamc")
+    assert lk.path_of(ids["amino"]) == "CP >> FC1 >> 1A >> Amino acids"
+    assert lk.path_of(ids["sec"]) == "CP"
+    assert lk.path_of(99999) is None
+
+
+def test_malformed_path_returns_none():
+    lk = OutlineLookup(course_id=1, nodes=[])
+    assert lk.node_id_by_path("") is None
+    assert lk.node_id_by_path("   ") is None

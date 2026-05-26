@@ -57,16 +57,16 @@ MAX_TOKENS = 2048
 class GroundedTag:
     """One calibrated tag decision grounded to a retrieved candidate.
 
-    ``generation_confidence`` is the model's self-report (V44 surface);
-    ``calibrated_confidence`` is the V69 logprob grade. ``manual_review``
-    follows the calibrated score, not the self-report (V-T3).
+    ``calibrated_confidence`` is the V69 logprob grade — the sole confidence
+    we trust. The model's optimistic self-report is no longer collected
+    (it was dead weight downstream of calibration). ``manual_review``
+    follows the calibrated score (V-T3).
     """
 
     node_id: int
     path: str | None
     candidate_index: int        # 1..N position the model picked
     via: str                    # candidate.via ('embedding' | 'edge')
-    generation_confidence: float
     rationale: str
     calibrated_confidence: float
     manual_review: bool
@@ -99,7 +99,6 @@ _SYSTEM_PREAMBLE = (
     "- Emit one tag per candidate the item genuinely belongs to; emit none if "
     "no candidate fits.\n"
     "- Prefer the most specific candidate when several overlap.\n"
-    "- `confidence` ∈ [0.0, 1.0] is your honest self-assessment per tag.\n"
 )
 
 
@@ -134,14 +133,10 @@ def build_pick_schema(n_candidates: int) -> dict[str, Any]:
                         "type": "array",
                         "items": {
                             "type": "object",
-                            "required": ["node_index", "confidence", "rationale"],
+                            "required": ["node_index", "rationale"],
                             "additionalProperties": False,
                             "properties": {
                                 "node_index": index_property,
-                                "confidence": {
-                                    "type": "number",
-                                    "description": "[0,1]; clipped server-side.",
-                                },
                                 "rationale": {
                                     "type": "string",
                                     "description": "1 line.",
@@ -197,18 +192,19 @@ def _extract_structured_output(completion: Any) -> dict[str, Any] | None:
 def _parse_picks(
     payload: dict[str, Any],
     recall_result: RecallResult,
-) -> tuple[list[tuple[int, float, str]], list[str]]:
+) -> tuple[list[tuple[int, str]], list[str]]:
     """Server-side belt over the model's picks.
 
-    Returns ``[(candidate_index, confidence, rationale), ...]`` after:
-    range-recheck ``1..N`` (V-L3 — strict enum is enforced again here in
-    case the SDK validation is loose), per-candidate dedupe (first wins),
-    confidence clip to ``[0,1]``.
+    Returns ``[(candidate_index, rationale), ...]`` after: range-recheck
+    ``1..N`` (V-L3 — strict enum is enforced again here in case the SDK
+    validation is loose) and per-candidate dedupe (first wins). Confidence
+    is no longer read from the model — the calibrator (V69) is the sole
+    confidence source.
     """
 
     n = len(recall_result.candidates)
     warnings: list[str] = []
-    picks: list[tuple[int, float, str]] = []
+    picks: list[tuple[int, str]] = []
     seen: set[int] = set()
 
     for i, raw in enumerate(payload.get("tags") or []):
@@ -228,19 +224,11 @@ def _parse_picks(
             continue
         seen.add(idx)
 
-        conf_raw = raw.get("confidence", 0.0)
-        try:
-            conf = float(conf_raw)
-        except (TypeError, ValueError):
-            warnings.append(f"pick #{i}: bad confidence {conf_raw!r}; defaulting to 0.5")
-            conf = 0.5
-        conf = max(0.0, min(1.0, conf))
-
         rationale = raw.get("rationale") or ""
         if not isinstance(rationale, str):
             rationale = str(rationale)
 
-        picks.append((idx, conf, rationale.strip()))
+        picks.append((idx, rationale.strip()))
 
     return picks, warnings
 
@@ -333,10 +321,10 @@ async def generate_grounded_tags(
     picks, warnings = _parse_picks(payload, recall_result)
 
     tags: list[GroundedTag] = []
-    for idx, gen_conf, rationale in picks:
+    for idx, rationale in picks:
         candidate = recall_result.candidates[idx - 1]
         tag_label = candidate.path or f"node:{candidate.node_id}"
-        # V69: re-score the model's self-report against the logprob grade.
+        # V69: the logprob grade is the only confidence we keep.
         calibration = await calibrate_tag(
             question_text=entity_text,
             tag_label=tag_label,
@@ -349,7 +337,6 @@ async def generate_grounded_tags(
                 path=candidate.path,
                 candidate_index=idx,
                 via=candidate.via,
-                generation_confidence=gen_conf,
                 rationale=rationale,
                 calibrated_confidence=calibration.confidence,
                 manual_review=calibration.manual_review,

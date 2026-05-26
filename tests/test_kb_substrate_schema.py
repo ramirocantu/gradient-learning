@@ -21,6 +21,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.atomic_fact import AtomicFact
+from app.models.atomic_fact_tag import AtomicFactTag
 from app.models.captures import Question
 from app.models.concept_edge import ConceptEdge
 from app.models.content_embedding import ContentEmbedding
@@ -571,5 +572,132 @@ async def test_discriminator_factor_question_cascade(tx_session: AsyncSession):
         await tx_session.execute(
             select(DiscriminatorFactor).where(DiscriminatorFactor.id == dfid)
         )
+    ).scalar_one_or_none()
+    assert remaining is None
+
+
+# --------------------------------------------------------------------------- #
+# 8. atomic_fact_tags (T30) — canonical <target>_tags shape (V-T1/V-T2/V-T3)
+# --------------------------------------------------------------------------- #
+
+
+async def _make_fact(tx_session: AsyncSession, course: Course, pdf: PdfSource) -> AtomicFact:
+    f = AtomicFact(
+        course_id=course.id,
+        pdf_source_id=pdf.id,
+        text="x",
+        content_hash=_hash(uuid.uuid4().hex),
+    )
+    tx_session.add(f)
+    await tx_session.flush()
+    return f
+
+
+async def test_atomic_fact_tag_insert_round_trip(tx_session: AsyncSession):
+    course = await _make_course(tx_session)
+    pdf = await _make_pdf(tx_session, course)
+    node = await _make_node(tx_session, course)
+    fact = await _make_fact(tx_session, course, pdf)
+    fid, nid = fact.id, node.id
+    t = AtomicFactTag(
+        atomic_fact_id=fid,
+        node_id=nid,
+        source="llm",
+        confidence=0.87,
+        rationale="grounded pick",
+        extractor_version="grounded-v1",
+    )
+    tx_session.add(t)
+    await tx_session.flush()
+    tid = t.id
+
+    tx_session.expire_all()
+    got = (
+        await tx_session.execute(select(AtomicFactTag).where(AtomicFactTag.id == tid))
+    ).scalar_one()
+    assert got.atomic_fact_id == fid
+    assert got.node_id == nid
+    assert got.source == "llm"
+    assert float(got.confidence) == pytest.approx(0.87)
+    assert got.manual_review is False
+
+
+async def test_atomic_fact_tag_confidence_required_for_llm(tx_session: AsyncSession):
+    """V-T3: source='llm' with NULL confidence violates the CHECK."""
+    course = await _make_course(tx_session)
+    pdf = await _make_pdf(tx_session, course)
+    node = await _make_node(tx_session, course)
+    fact = await _make_fact(tx_session, course, pdf)
+    await tx_session.commit()
+
+    with pytest.raises(IntegrityError):
+        tx_session.add(
+            AtomicFactTag(
+                atomic_fact_id=fact.id, node_id=node.id, source="llm", confidence=None
+            )
+        )
+        await tx_session.flush()
+
+
+async def test_atomic_fact_tag_low_conf_requires_review(tx_session: AsyncSession):
+    """V-T3: confidence <0.5 without manual_review violates the CHECK."""
+    course = await _make_course(tx_session)
+    pdf = await _make_pdf(tx_session, course)
+    node = await _make_node(tx_session, course)
+    fact = await _make_fact(tx_session, course, pdf)
+    await tx_session.commit()
+
+    with pytest.raises(IntegrityError):
+        tx_session.add(
+            AtomicFactTag(
+                atomic_fact_id=fact.id,
+                node_id=node.id,
+                source="llm",
+                confidence=0.30,
+                manual_review=False,
+            )
+        )
+        await tx_session.flush()
+
+
+async def test_atomic_fact_tag_unique_node_source(tx_session: AsyncSession):
+    course = await _make_course(tx_session)
+    pdf = await _make_pdf(tx_session, course)
+    node = await _make_node(tx_session, course)
+    fact = await _make_fact(tx_session, course, pdf)
+    tx_session.add(
+        AtomicFactTag(
+            atomic_fact_id=fact.id, node_id=node.id, source="llm", confidence=0.9
+        )
+    )
+    await tx_session.flush()
+    await tx_session.commit()
+
+    with pytest.raises(IntegrityError):
+        tx_session.add(
+            AtomicFactTag(
+                atomic_fact_id=fact.id, node_id=node.id, source="llm", confidence=0.8
+            )
+        )
+        await tx_session.flush()
+
+
+async def test_atomic_fact_tag_fact_cascade(tx_session: AsyncSession):
+    course = await _make_course(tx_session)
+    pdf = await _make_pdf(tx_session, course)
+    node = await _make_node(tx_session, course)
+    fact = await _make_fact(tx_session, course, pdf)
+    t = AtomicFactTag(
+        atomic_fact_id=fact.id, node_id=node.id, source="manual", confidence=None
+    )
+    tx_session.add(t)
+    await tx_session.flush()
+    tid = t.id
+
+    await tx_session.delete(fact)
+    await tx_session.flush()
+
+    remaining = (
+        await tx_session.execute(select(AtomicFactTag).where(AtomicFactTag.id == tid))
     ).scalar_one_or_none()
     assert remaining is None

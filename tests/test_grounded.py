@@ -156,7 +156,7 @@ async def test_pick_maps_to_node_and_calibrates():
         _cand(20, path="root >> beta", via="edge", score=0.7),
     )
     tagging = _tagging_client(
-        [{"node_index": 2, "confidence": 0.95, "rationale": "beta fits"}]
+        [{"node_index": 2, "rationale": "beta fits"}]
     )
     # Calibrator: Yes dominates → high confidence, no manual_review.
     calib = _calibrator_client(yes=-0.05, no=-4.0)
@@ -174,18 +174,16 @@ async def test_pick_maps_to_node_and_calibrates():
     assert tag.path == "root >> beta"
     assert tag.candidate_index == 2
     assert tag.via == "edge"
-    assert tag.generation_confidence == 0.95   # model self-report preserved
-    assert tag.calibrated_confidence > 0.9     # V69 logprob grade
+    assert tag.calibrated_confidence > 0.9     # V69 logprob grade — sole confidence
     assert tag.manual_review is False
     calib.chat.completions.create.assert_awaited()  # V69 ran
 
 
 async def test_calibration_below_half_sets_manual_review():
-    """V69 / V-T3: calibrated <0.5 ⇒ manual_review, regardless of the
-    model's optimistic self-report."""
+    """V69 / V-T3: calibrated <0.5 ⇒ manual_review."""
     res = _recall(_cand(10, path="root >> alpha"))
     tagging = _tagging_client(
-        [{"node_index": 1, "confidence": 0.99, "rationale": "sure"}]
+        [{"node_index": 1, "rationale": "sure"}]
     )
     calib = _calibrator_client(yes=-3.0, no=-0.1)  # No dominates → <0.5
 
@@ -196,7 +194,6 @@ async def test_calibration_below_half_sets_manual_review():
         calibrator_client=calib,
     )
     tag = result.tags[0]
-    assert tag.generation_confidence == 0.99
     assert tag.calibrated_confidence < 0.5
     assert tag.manual_review is True
 
@@ -211,8 +208,8 @@ async def test_out_of_range_index_rejected():
     res = _recall(_cand(10, path="root >> alpha"))
     tagging = _tagging_client(
         [
-            {"node_index": 1, "confidence": 0.8, "rationale": "ok"},
-            {"node_index": 5, "confidence": 0.9, "rationale": "bogus"},  # N=1
+            {"node_index": 1, "rationale": "ok"},
+            {"node_index": 5, "rationale": "bogus"},  # N=1
         ]
     )
     calib = _calibrator_client(yes=-0.1, no=-3.0)
@@ -231,8 +228,8 @@ async def test_duplicate_index_deduped():
     res = _recall(_cand(10, path="root >> alpha"), _cand(20, path="root >> beta"))
     tagging = _tagging_client(
         [
-            {"node_index": 1, "confidence": 0.8, "rationale": "a"},
-            {"node_index": 1, "confidence": 0.7, "rationale": "dupe"},
+            {"node_index": 1, "rationale": "a"},
+            {"node_index": 1, "rationale": "dupe"},
         ]
     )
     calib = _calibrator_client(yes=-0.1, no=-3.0)
@@ -247,26 +244,10 @@ async def test_duplicate_index_deduped():
     assert result.tags[0].node_id == 10
 
 
-async def test_confidence_clipped_to_unit_interval():
-    res = _recall(_cand(10, path="root >> alpha"))
-    tagging = _tagging_client(
-        [{"node_index": 1, "confidence": 1.7, "rationale": "over"}]
-    )
-    calib = _calibrator_client(yes=-0.1, no=-3.0)
-
-    result = await generate_grounded_tags(
-        entity_text="x",
-        recall_result=res,
-        tagging_client=tagging,
-        calibrator_client=calib,
-    )
-    assert result.tags[0].generation_confidence == 1.0
-
-
 async def test_unparsed_node_index_warns_and_skips():
     res = _recall(_cand(10, path="root >> alpha"))
     tagging = _tagging_client(
-        [{"node_index": "two", "confidence": 0.8, "rationale": "bad"}]
+        [{"node_index": "two", "rationale": "bad"}]
     )
     calib = _calibrator_client(yes=-0.1, no=-3.0)
 
@@ -288,7 +269,7 @@ async def test_unparsed_node_index_warns_and_skips():
 async def test_pathless_candidate_uses_node_fallback_label():
     res = _recall(_cand(10, path=None, via="edge"))
     tagging = _tagging_client(
-        [{"node_index": 1, "confidence": 0.8, "rationale": "ok"}]
+        [{"node_index": 1, "rationale": "ok"}]
     )
     calib = _calibrator_client(yes=-0.1, no=-3.0)
 
@@ -308,7 +289,7 @@ async def test_token_usage_recorded():
     tagging = make_client(
         make_completion(
             content=json.dumps(
-                {"tags": [{"node_index": 1, "confidence": 0.8, "rationale": "ok"}]}
+                {"tags": [{"node_index": 1, "rationale": "ok"}]}
             ),
             prompt_tokens=512,
             completion_tokens=40,

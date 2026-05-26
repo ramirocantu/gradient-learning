@@ -33,7 +33,6 @@ logger = logging.getLogger(__name__)
 
 
 __all__ = [
-    "CARS_SKIPPED_REASON",
     "EXTRACTOR_VERSION",
     "ExtractFeaturesResult",
     "FeatureExtractionResult",
@@ -44,7 +43,9 @@ __all__ = [
 ]
 
 
-CARS_SKIPPED_REASON = "cars_deferred_to_4_1b"
+# §A: core is domain-blind. MCAT-specific CARS skipping (the old
+# `CARS_SKIPPED_REASON = "cars_deferred_to_4_1b"`) belonged in the MCAT pack,
+# not in core feature extraction — retired. Stub uses a domain-neutral reason.
 _T14_PORT_PENDING_REASON = "t14_port_pending"
 
 

@@ -21,7 +21,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.captures import Attempt, Question
 from app.models.features import QuestionFeatures
 from app.services.analyzer import (
-    CARS_SKIPPED_REASON,
     FeatureExtractionResult,
     extract_features_for_question,
 )
@@ -55,7 +54,7 @@ class ExtractionSummary:
     succeeded: int = 0
     failed: int = 0
     retried: int = 0
-    skipped_cars: int = 0
+    skipped: int = 0  # domain-blind skip counter (was MCAT-specific `skipped_cars`)
     cache_hits: int = 0
     cache_misses: int = 0
     total_cost_usd: float = 0.0
@@ -71,7 +70,7 @@ class ExtractionSummary:
         lines = [
             f"SUMMARY: model={self.model} processed={self.processed} "
             f"succeeded={self.succeeded} failed={self.failed} retried={self.retried} "
-            f"skipped_cars={self.skipped_cars}{dry_note}",
+            f"skipped={self.skipped}{dry_note}",
             f"         cache_hits={self.cache_hits} cache_misses={self.cache_misses}",
             f"         total_cost_usd=${self.total_cost_usd:.2f} "
             f"total_cost_saved_usd=${self.total_cost_saved_usd:.2f} "
@@ -100,7 +99,7 @@ class ExtractionSummary:
             "succeeded": self.succeeded,
             "failed": self.failed,
             "retried": self.retried,
-            "skipped_cars": self.skipped_cars,
+            "skipped": self.skipped,
             "cache_hits": self.cache_hits,
             "cache_misses": self.cache_misses,
             "total_cost_usd": round(self.total_cost_usd, 4),
@@ -234,8 +233,10 @@ async def run_extraction(
                         if not dry_run:
                             await session.commit()
 
-                    if result.skipped_reason == CARS_SKIPPED_REASON:
-                        summary.skipped_cars += 1
+                    if result.skipped_reason is not None:
+                        # Any non-None skip — CARS routing now lives in the
+                        # MCAT pack, not in core feature extraction (§A).
+                        summary.skipped += 1
                         return
 
                     summary.succeeded += 1

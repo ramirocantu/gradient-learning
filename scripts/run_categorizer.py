@@ -24,7 +24,6 @@ from app.config import settings
 from app.database import AsyncSessionLocal
 from app.services.categorizer.cache import CategorizerCache
 from app.services.categorizer.worker import WorkerSummary, run
-from app.startup import ensure_outline_seeded
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +34,6 @@ async def _main(
     dry_run: bool,
     max_cost_usd: float | None,
 ) -> WorkerSummary:
-    await ensure_outline_seeded()
     client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
     cache = CategorizerCache(settings.CATEGORIZER_CACHE_PATH)
     try:

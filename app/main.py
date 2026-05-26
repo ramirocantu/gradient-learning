@@ -21,7 +21,6 @@ from app.api.v1.outline import router as outline_router
 from app.api.v1.recommendations import router as recommendations_router
 from app.api.v1.tutor import router as tutor_router
 from app.scheduler import start_scheduler, stop_scheduler
-from app.startup import ensure_outline_seeded
 from app.web.dashboard.main import app as dashboard_app
 from app.web.media import router as media_router
 from app.web.viewer.main import app as viewer_app
@@ -29,7 +28,6 @@ from app.web.viewer.main import app as viewer_app
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await ensure_outline_seeded()
     start_scheduler()
     yield
     stop_scheduler()

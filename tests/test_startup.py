@@ -1,24 +1,28 @@
-"""Auto-seed behavior for app.startup.ensure_outline_seeded."""
+"""V-RB3 / V-O6 guard: startup ⊥ implicit-seed.
+
+After T19, `app/startup.py` is gone and `app.main.lifespan` no longer
+invokes any auto-seed path. Seed restoration = explicit re-upload of
+`seeds/aamc_outline.schema.json` via
+`POST /api/v1/courses/{id}/outline:import`.
+"""
 
 from __future__ import annotations
 
-from sqlalchemy.ext.asyncio import async_sessionmaker
+import importlib
+import inspect
 
-from app.startup import ensure_outline_seeded
-
-
-async def test_ensure_outline_seeded_returns_expected_counts(test_engine):
-    factory = async_sessionmaker(test_engine, expire_on_commit=False)
-    report = await ensure_outline_seeded(session_factory=factory)
-    assert report.sections_upserted == 4
-    assert report.ccs_upserted >= 10
-    assert report.topics_upserted > 100
+import pytest
 
 
-async def test_ensure_outline_seeded_idempotent_on_repeat(test_engine):
-    factory = async_sessionmaker(test_engine, expire_on_commit=False)
-    r1 = await ensure_outline_seeded(session_factory=factory)
-    r2 = await ensure_outline_seeded(session_factory=factory)
-    assert r1.sections_upserted == r2.sections_upserted
-    assert r1.ccs_upserted == r2.ccs_upserted
-    assert r1.topics_upserted == r2.topics_upserted
+def test_app_startup_module_removed():
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("app.startup")
+
+
+def test_main_lifespan_does_not_auto_seed():
+    import app.main as main_mod
+
+    src = inspect.getsource(main_mod.lifespan)
+    assert "ensure_outline_seeded" not in src
+    assert "seed_outline" not in src
+    assert "app.startup" not in src

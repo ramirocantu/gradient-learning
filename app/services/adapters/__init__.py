@@ -56,3 +56,9 @@ def registered_sources() -> list[str]:
 # Register built-in adapters (import for side effect). Must come after
 # register_adapter is defined to avoid a circular-import failure.
 from app.services.adapters import uworld as _uworld  # noqa: E402,F401
+from app.services.adapters import web_qbank as _web_qbank  # noqa: E402,F401
+from app.services.adapters import manual as _manual  # noqa: E402,F401
+
+# pdf-qset adapter deferred (T33 "hardest, last"): a PDF question set needs a
+# file-upload payload + a multi-question (no-Attempt) response shape, distinct
+# from the single-capture CapturePayload above. Register it here once built.

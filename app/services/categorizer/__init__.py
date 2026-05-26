@@ -6,7 +6,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -116,7 +116,7 @@ async def tag_question(
     session: AsyncSession,
     *,
     lookup: OutlineLookup,
-    anthropic_client: AsyncAnthropic,
+    openai_client: AsyncOpenAI,
     cache: CategorizerCache | None = None,
 ) -> TagQuestionResult:
     """Categorize a question via the LLM and persist QuestionTag rows.
@@ -155,7 +155,7 @@ async def tag_question(
     # an eval/smoke script that mutates `llm.EXTRACTOR_VERSION`) take effect.
     cat = await categorize(
         question,
-        anthropic_client=anthropic_client,
+        openai_client=openai_client,
         outline_lookup=lookup,
         cache=cache,
         extractor_version=llm_module.EXTRACTOR_VERSION,

@@ -12,14 +12,15 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_session, verify_coach_token
-from app.config import settings
+from app.config import settings  # noqa: F401 — kept for future cache-path settings access
+from app.services.llm.client import build_openai_client
 from app.services.admin_tags import (
     ManualTagConflictError,
     ManualTagValidationError,
@@ -41,9 +42,9 @@ from app.services.categorizer.outline_lookup import OutlineLookup
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
-def _anthropic_client() -> AsyncAnthropic:
-    """FastAPI dependency: per-request Anthropic client. Cheap to instantiate."""
-    return AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+def _openai_client() -> AsyncOpenAI:
+    """FastAPI dependency: per-request OpenAI client. V41 retries baked in."""
+    return build_openai_client(max_retries=5)
 
 
 def _categorizer_cache() -> CategorizerCache:
@@ -87,7 +88,7 @@ def _tag_result_payload(result: TagQuestionResult) -> dict[str, Any]:
 async def recategorize_question(
     question_id: int,
     session: AsyncSession = Depends(get_session),
-    client: AsyncAnthropic = Depends(_anthropic_client),
+    client: AsyncOpenAI = Depends(_openai_client),
     cache: CategorizerCache = Depends(_categorizer_cache),
 ) -> dict[str, Any]:
     # NOTE: don't close `cache` here. Tests override the dep with a shared
@@ -100,7 +101,7 @@ async def recategorize_question(
             question_id,
             session,
             lookup=lookup,
-            anthropic_client=client,
+            openai_client=client,
             cache=cache,
         )
     except QuestionNotFoundError as exc:

@@ -10,13 +10,13 @@ from datetime import date
 from typing import Literal
 from urllib.parse import urlencode
 
-from anthropic import AsyncAnthropic
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import AsyncSessionLocal
+from app.services.llm.client import build_openai_client
 from app.services.analyzer.cache import FeatureExtractorCache
 from app.services.analyzer.patterns import AnalysisFilter, analyze
 from app.services.analyzer.synthesizer import synthesize
@@ -46,12 +46,12 @@ async def insights_page(
 
     report = await analyze(af, session)
 
-    client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    client = build_openai_client(max_retries=5)
     cache = SynthesizerCache(settings.SYNTHESIZER_CACHE_PATH)
     try:
         synthesis = await synthesize(
             report,
-            anthropic_client=client,
+            openai_client=client,
             cache=cache,
             bust_cache=bust_cache,
             run_llm=bust_cache,
@@ -82,12 +82,12 @@ async def run_extraction_and_redirect(
     since: date | None = Query(default=None),
     min_sample_size: int = Query(default=10),
 ):
-    client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    client = build_openai_client(max_retries=5)
     cache = FeatureExtractorCache(settings.FEATURE_EXTRACTOR_CACHE_PATH)
     try:
         await run_extraction(
             AsyncSessionLocal,
-            anthropic_client=client,
+            openai_client=client,
             cache=cache,
             missed_only=False,
             limit=None,

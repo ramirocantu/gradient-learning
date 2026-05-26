@@ -22,8 +22,10 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from anthropic import AsyncAnthropic
-from anthropic.types import Message, ToolUseBlock
+import json as _json
+
+from openai import AsyncOpenAI
+from openai.types.chat import ChatCompletion
 
 if TYPE_CHECKING:
     from app.services.anki.topic_resolver_cache import AnkiTopicResolverCache
@@ -113,19 +115,13 @@ CARD_TEXT_MAX_LEN = 2000
 # carries no resolvable signal.
 MIN_RESOLVABLE_TEXT_LEN = 30
 
-# Mirror categorizer pricing table to avoid duplication; falls back to Sonnet
-# rates with a warning. Keep this table in sync with categorizer.llm._PRICING.
+# Mirror categorizer pricing table; OpenAI USD/Mtok.
 _PRICING: dict[str, dict[str, float]] = {
-    "claude-haiku-4-5-20251001": {
-        "input": 1.00,
-        "cached_read": 0.10,
-        "output": 5.00,
-    },
-    "claude-sonnet-4-6": {
-        "input": 3.00,
-        "cached_read": 0.30,
-        "output": 15.00,
-    },
+    "gpt-4.1": {"input": 2.0, "cached_read": 0.50, "output": 8.0},
+    "gpt-4.1-mini": {"input": 0.40, "cached_read": 0.10, "output": 1.60},
+    "gpt-4.1-nano": {"input": 0.10, "cached_read": 0.025, "output": 0.40},
+    "gpt-4o": {"input": 2.50, "cached_read": 1.25, "output": 10.0},
+    "gpt-4o-mini": {"input": 0.15, "cached_read": 0.075, "output": 0.60},
 }
 
 
@@ -133,10 +129,10 @@ def _pricing_for(model: str) -> dict[str, float]:
     if model in _PRICING:
         return _PRICING[model]
     logger.warning(
-        "no pricing known for model=%r in anki topic resolver; assuming Sonnet rates",
+        "no pricing known for model=%r in anki topic resolver; assuming gpt-4.1-mini",
         model,
     )
-    return _PRICING["claude-sonnet-4-6"]
+    return _PRICING["gpt-4.1-mini"]
 
 
 def _model() -> str:
@@ -259,33 +255,32 @@ def _tool_def_for_cc(cc_code: str, topic_paths: list[str]) -> dict[str, Any]:
         },
     }
 
-    return {
-        "name": "submit_anki_topic",
-        "description": f"Tag card with AAMC topic IDs under {cc_code}.",
-        # v8: grammar-constrained sampling. See module-level EXTRACTOR_VERSION
-        # comment for the JSON-schema subset constraints satisfied below.
-        "strict": True,
-        "input_schema": {
-            "type": "object",
-            "required": ["decline", "topic_picks"],
-            "additionalProperties": False,
-            "properties": {
-                "decline": {
-                    "type": "boolean",
-                    "description": "No topic fits.",
-                },
-                "topic_picks": {
-                    "type": "array",
-                    "items": pick_item_schema,
-                    "description": "Distinct topic IDs.",
-                },
+    parameters = {
+        "type": "object",
+        "required": ["decline", "topic_picks"],
+        "additionalProperties": False,
+        "properties": {
+            "decline": {
+                "type": "boolean",
+                "description": "No topic fits.",
+            },
+            "topic_picks": {
+                "type": "array",
+                "items": pick_item_schema,
+                "description": "Distinct topic IDs.",
             },
         },
-        # Tool def carries the per-CC integer enum + descriptions. v9's int
-        # enum cuts the tool-JSON payload ~10× vs v8's string enum, but the
-        # cache_control still earns its keep on the descriptions + tool-use
-        # system prompt overhead Anthropic injects (§V38, §B4).
-        "cache_control": {"type": "ephemeral"},
+    }
+    # V45: OpenAI function-tool with strict grammar-constrained sampling.
+    # V38 retired — no `cache_control`; OpenAI auto-caches stable prefixes.
+    return {
+        "type": "function",
+        "function": {
+            "name": "submit_anki_topic",
+            "description": f"Tag card with AAMC topic IDs under {cc_code}.",
+            "strict": True,
+            "parameters": parameters,
+        },
     }
 
 
@@ -323,10 +318,18 @@ def _compute_cost(
     )
 
 
-def _extract_tool_call(message: Message) -> ToolUseBlock | None:
-    for block in message.content:
-        if isinstance(block, ToolUseBlock):
-            return block
+def _extract_tool_call(completion: ChatCompletion) -> dict[str, Any] | None:
+    """Return parsed `arguments` of the first `submit_anki_topic` tool call."""
+    choice = completion.choices[0] if completion.choices else None
+    if choice is None or choice.message is None:
+        return None
+    for call in choice.message.tool_calls or []:
+        if call.function and call.function.name == "submit_anki_topic":
+            try:
+                return _json.loads(call.function.arguments or "{}")
+            except _json.JSONDecodeError as exc:
+                logger.warning("resolve_topic: tool arguments not valid JSON: %s", exc)
+                return None
     return None
 
 
@@ -387,7 +390,7 @@ async def resolve_topic(
     filtered_tags: list[str],
     card_text: str,
     cc_code: str,
-    anthropic_client: AsyncAnthropic,
+    openai_client: AsyncOpenAI,
     cache: "AnkiTopicResolverCache | None" = None,
     extractor_version: str = EXTRACTOR_VERSION,
     model: str | None = None,
@@ -433,27 +436,23 @@ async def resolve_topic(
     system_block = _system_block_for_cc(cc_code, topic_paths)
     tool = _tool_def_for_cc(cc_code, topic_paths)
 
-    msg = await anthropic_client.messages.create(
+    completion = await openai_client.chat.completions.create(
         model=resolved_model,
-        max_tokens=MAX_TOKENS,
-        system=[
-            {
-                "type": "text",
-                "text": system_block,
-                # The CC's topic list is the only large reusable block across
-                # calls within the same CC; mark it cacheable.
-                "cache_control": {"type": "ephemeral"},
-            }
+        max_completion_tokens=MAX_TOKENS,
+        messages=[
+            {"role": "system", "content": system_block},
+            {"role": "user", "content": _build_user_message(filtered_tags, card_text)},
         ],
         tools=[tool],
-        tool_choice={"type": "tool", "name": "submit_anki_topic"},
-        messages=[{"role": "user", "content": _build_user_message(filtered_tags, card_text)}],
+        tool_choice={
+            "type": "function",
+            "function": {"name": "submit_anki_topic"},
+        },
     )
 
-    tool_block = _extract_tool_call(msg)
+    payload = _extract_tool_call(completion) or {}
     picks: list[TopicPick] = []
-    if tool_block is not None:
-        payload = tool_block.input or {}
+    if payload:
         declined = bool(payload.get("decline", False))
         if not declined:
             raw_picks = payload.get("topic_picks") or []
@@ -498,11 +497,16 @@ async def resolve_topic(
                         )
                     )
 
-    usage = getattr(msg, "usage", None)
-    input_tokens = int(getattr(usage, "input_tokens", 0) or 0)
-    output_tokens = int(getattr(usage, "output_tokens", 0) or 0)
-    cached_read = int(getattr(usage, "cache_read_input_tokens", 0) or 0)
-    cost = _compute_cost(input_tokens, output_tokens, cached_read, model=resolved_model)
+    usage = getattr(completion, "usage", None)
+    prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+    output_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+    cached_read = 0
+    details = getattr(usage, "prompt_tokens_details", None)
+    if details is not None:
+        cached_read = int(getattr(details, "cached_tokens", 0) or 0)
+    uncached_input = max(prompt_tokens - cached_read, 0)
+    cost = _compute_cost(uncached_input, output_tokens, cached_read, model=resolved_model)
+    input_tokens = prompt_tokens
 
     result = ResolveResult(
         picks=picks,

@@ -11,10 +11,10 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
-from anthropic import AsyncAnthropic
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.config import settings
+from app.services.llm.client import build_openai_client
 from app.database import AsyncSessionLocal
 from app.models.task_run import TaskRun, TaskRunStatus
 from app.services.anki.assignment import run_complete_unlocked, run_unlock_due
@@ -46,7 +46,8 @@ scheduler = AsyncIOScheduler()
 
 
 async def _do_run_categorizer() -> None:
-    client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    # V41: max_retries=5 absorbs transient OpenAI errors at the SDK layer.
+    client = build_openai_client(max_retries=5)
     cache = CategorizerCache(settings.CATEGORIZER_CACHE_PATH)
     run_id: int | None = None
     try:
@@ -66,7 +67,7 @@ async def _do_run_categorizer() -> None:
             lookup = await OutlineLookup.load(session)
             summary = await run_categorizer(
                 session,
-                anthropic_client=client,
+                openai_client=client,
                 cache=cache,
                 max_cost_usd=settings.CATEGORIZER_PER_RUN_BUDGET_USD,
                 lookup=lookup,
@@ -119,7 +120,7 @@ async def run_categorizer_job() -> None:
 
 
 async def _do_run_feature_extraction() -> None:
-    client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    client = build_openai_client(max_retries=5)
     cache = FeatureExtractorCache(settings.FEATURE_EXTRACTOR_CACHE_PATH)
     run_id: int | None = None
     try:
@@ -137,7 +138,7 @@ async def _do_run_feature_extraction() -> None:
 
         summary = await run_extraction(
             AsyncSessionLocal,
-            anthropic_client=client,
+            openai_client=client,
             cache=cache,
             missed_only=False,
         )
@@ -262,10 +263,10 @@ async def run_anki_sync_job() -> None:
 
 
 async def _do_run_anki_topic_resolver() -> None:
-    # §V41: bump retries beyond SDK default (2) so transient Anthropic API
-    # errors (529 overloaded, 429 rate-limit, 5xx) get absorbed by the SDK
-    # before reaching the worker's per-card try/except.
-    client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY, max_retries=5)
+    # V41 (amended): max_retries≥5 absorbs transient OpenAI errors at the SDK
+    # boundary (429 rate-limit, 5xx, transport blips) before reaching the
+    # worker's per-card try/except.
+    client = build_openai_client(max_retries=5)
     cache = AnkiTopicResolverCache(settings.ANKI_TOPIC_RESOLVER_CACHE_PATH)
     run_id: int | None = None
     try:
@@ -284,7 +285,7 @@ async def _do_run_anki_topic_resolver() -> None:
         async with AsyncSessionLocal() as session:
             summary = await run_anki_topic_resolver(
                 session,
-                anthropic_client=client,
+                openai_client=client,
                 cache=cache,
                 max_cost_usd=settings.ANKI_TOPIC_RESOLVER_PER_RUN_BUDGET_USD,
             )

@@ -22,8 +22,8 @@ import logging
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
-from anthropic import AsyncAnthropic
-from anthropic.types import Message, ToolUseBlock
+from openai import AsyncOpenAI
+from openai.types.chat import ChatCompletion
 
 if TYPE_CHECKING:
     from app.services.analyzer.cache import FeatureExtractorCache
@@ -49,10 +49,13 @@ def _model() -> str:
 MODEL = settings.FEATURE_EXTRACTOR_MODEL
 
 
-# Pricing per million tokens; mirrors categorizer.llm._PRICING.
+# OpenAI pricing per Mtok; mirrors categorizer.llm._PRICING.
 _PRICING = {
-    "claude-sonnet-4-6": {"input": 3.0, "output": 15.0, "cached_read": 0.30},
-    "claude-haiku-4-5-20251001": {"input": 1.0, "output": 5.0, "cached_read": 0.10},
+    "gpt-4.1": {"input": 2.0, "output": 8.0, "cached_read": 0.50},
+    "gpt-4.1-mini": {"input": 0.40, "output": 1.60, "cached_read": 0.10},
+    "gpt-4.1-nano": {"input": 0.10, "output": 0.40, "cached_read": 0.025},
+    "gpt-4o": {"input": 2.50, "output": 10.0, "cached_read": 1.25},
+    "gpt-4o-mini": {"input": 0.15, "output": 0.60, "cached_read": 0.075},
 }
 
 
@@ -60,10 +63,10 @@ def _pricing_for(model: str) -> dict[str, float]:
     if model in _PRICING:
         return _PRICING[model]
     logger.warning(
-        "no pricing known for model=%r; assuming Sonnet rates for cost estimate",
+        "no pricing known for model=%r; assuming gpt-4.1-mini rates",
         model,
     )
-    return _PRICING["claude-sonnet-4-6"]
+    return _PRICING["gpt-4.1-mini"]
 
 
 ReasoningType = Literal["recall", "comprehension", "application", "analysis", "inference"]
@@ -99,24 +102,23 @@ class ExtractFeaturesResult:
     parse_warnings: list[str]
 
 
-_TOOL = {
-    "name": "submit_question_features",
-    "description": "Submit content-agnostic features about an MCAT question.",
-    "input_schema": {
-        "type": "object",
-        "required": [
-            "reasoning_type",
-            "requires_calculation",
-            "calculation_steps",
-            "distractor_difficulty",
-            "trap_distractor_present",
-            "common_misconception",
-            "jargon_density",
-            "key_concept_summary",
-            "involves_graph_or_figure",
-            "involves_data_table",
-        ],
-        "properties": {
+_TOOL_PARAMETERS = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": [
+        "reasoning_type",
+        "requires_calculation",
+        "calculation_steps",
+        "passage_type",
+        "distractor_difficulty",
+        "trap_distractor_present",
+        "common_misconception",
+        "jargon_density",
+        "key_concept_summary",
+        "involves_graph_or_figure",
+        "involves_data_table",
+    ],
+    "properties": {
             "reasoning_type": {
                 "type": "string",
                 "enum": [
@@ -140,17 +142,16 @@ _TOOL = {
             },
             "calculation_steps": {
                 "type": "integer",
-                "minimum": 0,
                 "description": (
-                    "Approximate count of distinct calculation steps. "
+                    "Approximate count of distinct calculation steps (>=0). "
                     "Set to 0 when requires_calculation=false."
                 ),
             },
             "passage_type": {
-                "type": "string",
-                "enum": ["experimental", "descriptive", "hypothesis_driven"],
+                "type": ["string", "null"],
+                "enum": ["experimental", "descriptive", "hypothesis_driven", None],
                 "description": (
-                    "Set only when the question is passage-based. "
+                    "Set only when the question is passage-based, else null. "
                     "experimental=passage describes an experiment with methods/results; "
                     "descriptive=expository content; "
                     "hypothesis_driven=passage frames competing hypotheses."
@@ -221,6 +222,15 @@ _TOOL = {
                 ),
             },
         },
+}
+
+_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "submit_question_features",
+        "description": "Submit content-agnostic features about an MCAT question.",
+        "strict": True,
+        "parameters": _TOOL_PARAMETERS,
     },
 }
 
@@ -351,10 +361,18 @@ def make_features_cache_key(
     return h.hexdigest()
 
 
-def _extract_tool_call(message: Message) -> ToolUseBlock | None:
-    for block in message.content or []:
-        if isinstance(block, ToolUseBlock) and block.name == "submit_question_features":
-            return block
+def _extract_tool_call(completion: ChatCompletion) -> dict[str, Any] | None:
+    """Return parsed JSON args of the `submit_question_features` tool call."""
+    choice = completion.choices[0] if completion.choices else None
+    if choice is None or choice.message is None:
+        return None
+    for call in choice.message.tool_calls or []:
+        if call.function and call.function.name == "submit_question_features":
+            try:
+                return json.loads(call.function.arguments or "{}")
+            except json.JSONDecodeError as exc:
+                logger.warning("extract_features: tool args not valid JSON: %s", exc)
+                return None
     return None
 
 
@@ -494,7 +512,7 @@ async def extract_judgment_features(
     passage: Passage | None,
     mechanical: MechanicalFeatures,
     *,
-    anthropic_client: AsyncAnthropic,
+    openai_client: AsyncOpenAI,
     cache: "FeatureExtractorCache | None" = None,
     extractor_version: str = EXTRACTOR_VERSION,
     model: str | None = None,
@@ -535,37 +553,41 @@ async def extract_judgment_features(
                 parse_warnings=list(cached.parse_warnings),
             )
 
-    system_blocks = [
-        {
-            "type": "text",
-            "text": _SYSTEM_PROMPT,
-            "cache_control": {"type": "ephemeral"},
-        },
-    ]
     user_message = _format_user_message(question, passage, mechanical)
 
-    response = await anthropic_client.messages.create(
+    # V38 retired: OpenAI auto-caches stable prefixes; no `cache_control`.
+    response = await openai_client.chat.completions.create(
         model=resolved_model,
-        max_tokens=MAX_TOKENS,
-        system=system_blocks,
+        max_completion_tokens=MAX_TOKENS,
+        messages=[
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": user_message},
+        ],
         tools=[_TOOL],
-        tool_choice={"type": "tool", "name": "submit_question_features"},
-        messages=[{"role": "user", "content": user_message}],
+        tool_choice={
+            "type": "function",
+            "function": {"name": "submit_question_features"},
+        },
     )
 
-    input_tokens = response.usage.input_tokens or 0
-    output_tokens = response.usage.output_tokens or 0
-    cached_input_read = getattr(response.usage, "cache_read_input_tokens", 0) or 0
-    cache_creation = getattr(response.usage, "cache_creation_input_tokens", 0) or 0
+    usage = response.usage
+    prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+    output_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+    cached_input_read = 0
+    details = getattr(usage, "prompt_tokens_details", None)
+    if details is not None:
+        cached_input_read = int(getattr(details, "cached_tokens", 0) or 0)
+    uncached_input = max(prompt_tokens - cached_input_read, 0)
     cost = _compute_cost(
-        input_tokens + cache_creation,
+        uncached_input,
         output_tokens,
         cached_input_read,
         model=resolved_model,
     )
+    input_tokens = prompt_tokens
 
-    tool_call = _extract_tool_call(response)
-    if tool_call is None:
+    tool_args = _extract_tool_call(response)
+    if tool_args is None:
         msg = "LLM did not call submit_question_features"
         logger.warning("extract_features qid=%s: %s", question.qid, msg)
         # Fall back to a safe default block so downstream UPSERT can still proceed.
@@ -586,7 +608,7 @@ async def extract_judgment_features(
             features=fallback,
             cache_hit=False,
             cost_saved_usd=0.0,
-            input_tokens=input_tokens + cache_creation + cached_input_read,
+            input_tokens=input_tokens,
             output_tokens=output_tokens,
             estimated_cost_usd=cost,
             extractor_version=extractor_version,
@@ -597,13 +619,13 @@ async def extract_judgment_features(
             cache.put(cache_key, result, extractor_version, model=resolved_model)
         return result
 
-    features, warnings = _parse_tool_input(tool_call.input, mechanical)  # type: ignore[arg-type]
+    features, warnings = _parse_tool_input(tool_args, mechanical)
 
     result = ExtractFeaturesResult(
         features=features,
         cache_hit=False,
         cost_saved_usd=0.0,
-        input_tokens=input_tokens + cache_creation + cached_input_read,
+        input_tokens=input_tokens,
         output_tokens=output_tokens,
         estimated_cost_usd=cost,
         extractor_version=extractor_version,
@@ -614,12 +636,11 @@ async def extract_judgment_features(
         cache.put(cache_key, result, extractor_version, model=resolved_model)
 
     logger.info(
-        "extract_features qid=%s model=%s in=%d cache_create=%d cache_read=%d "
+        "extract_features qid=%s model=%s prompt=%d cache_read=%d "
         "out=%d cost=$%.4f warnings=%d",
         question.qid,
         resolved_model,
         input_tokens,
-        cache_creation,
         cached_input_read,
         output_tokens,
         cost,

@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import date
 from typing import Annotated, Any, Literal
 
-from anthropic import AsyncAnthropic
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_session
 from app.config import settings
 from app.database import AsyncSessionLocal
+from app.services.llm.client import build_openai_client
 from app.schemas.analyzer import InsightReportOut, InsightSynthesisResponse
 from app.services.analyzer.cache import FeatureExtractorCache
 from app.services.analyzer.patterns import AnalysisFilter, analyze
@@ -38,12 +38,12 @@ async def extract_features(body: ExtractRequest) -> dict[str, Any]:
     Synchronous — for ~75 questions at concurrency=5 expect ~75s response time.
     No auth required (localhost-only admin endpoint).
     """
-    client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    client = build_openai_client(max_retries=5)
     cache = FeatureExtractorCache(settings.FEATURE_EXTRACTOR_CACHE_PATH)
     try:
         summary = await run_extraction(
             AsyncSessionLocal,
-            anthropic_client=client,
+            openai_client=client,
             cache=cache,
             missed_only=body.missed_only,
             since=body.since,
@@ -110,13 +110,13 @@ async def get_insights(
         until=until,
         min_sample_size=min_sample_size,
     )
-    client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    client = build_openai_client(max_retries=5)
     cache = SynthesizerCache(settings.SYNTHESIZER_CACHE_PATH)
     try:
         synthesis = await insights_for_filter(
             af,
             session,
-            anthropic_client=client,
+            openai_client=client,
             cache=cache,
             bust_cache=bust_cache,
         )

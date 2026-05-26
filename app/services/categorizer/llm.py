@@ -1,31 +1,31 @@
 """LLM-driven AAMC categorizer.
 
-Calls Claude with the relevant AAMC outline subset + the question's stem,
+Calls OpenAI with the relevant AAMC outline subset + the question's stem,
 explanation, and raw UWorld tags. Returns 1–N tag suggestions (topic, content
 category, or skill) with confidence and rationale.
 
 Caching:
-  - Anthropic prompt caching on the outline system block (`cache_control` set
-    to "ephemeral") — dramatic cost reduction for back-to-back questions in
-    the same section.
+  - OpenAI prompt caching is automatic on stable prefixes — V38 retires the
+    Anthropic `cache_control` markers. V42 still applies: candidate iteration
+    must not switch the cached-prefix dimension between adjacent calls.
   - In-process result cache keyed on
     (stem_plain, explanation_plain, sorted UWorld tags, EXTRACTOR_VERSION).
     Bumping EXTRACTOR_VERSION invalidates the cache and re-runs the LLM.
 
 The cache lives for the lifetime of the Python process (worker run, FastAPI
-process). No Redis. Per CLAUDE.md, swap to Redis later if a workflow needs
-cross-process sharing.
+process). No Redis.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
-from anthropic import AsyncAnthropic
-from anthropic.types import Message, ToolUseBlock
+from openai import AsyncOpenAI
+from openai.types.chat import ChatCompletion
 
 if TYPE_CHECKING:
     from app.services.categorizer.cache import CategorizerCache
@@ -61,24 +61,26 @@ def _model() -> str:
 MODEL = settings.CATEGORIZER_MODEL
 
 
-# Pricing per million tokens. Keys are model identifier strings.
+# Pricing per million tokens. Keys are OpenAI model identifier strings.
+# `cached_read` is OpenAI's automatic prompt-cache discount.
 _PRICING = {
-    # Sonnet 4.6
-    "claude-sonnet-4-6": {"input": 3.0, "output": 15.0, "cached_read": 0.30},
-    # Haiku 4.5 (released October 2025). Roughly 4× cheaper than Sonnet.
-    "claude-haiku-4-5-20251001": {"input": 1.0, "output": 5.0, "cached_read": 0.10},
+    "gpt-4.1": {"input": 2.0, "output": 8.0, "cached_read": 0.50},
+    "gpt-4.1-mini": {"input": 0.40, "output": 1.60, "cached_read": 0.10},
+    "gpt-4.1-nano": {"input": 0.10, "output": 0.40, "cached_read": 0.025},
+    "gpt-4o": {"input": 2.50, "output": 10.0, "cached_read": 1.25},
+    "gpt-4o-mini": {"input": 0.15, "output": 0.60, "cached_read": 0.075},
 }
 
 
 def _pricing_for(model: str) -> dict[str, float]:
-    """Return pricing for a model. Falls back to Sonnet rates with a warning."""
+    """Return pricing for a model. Falls back to gpt-4.1-mini rates with a warning."""
     if model in _PRICING:
         return _PRICING[model]
     logger.warning(
-        "no pricing known for model=%r; assuming Sonnet rates for cost estimate",
+        "no pricing known for model=%r; assuming gpt-4.1-mini rates for cost estimate",
         model,
     )
-    return _PRICING["claude-sonnet-4-6"]
+    return _PRICING["gpt-4.1-mini"]
 
 
 @dataclass(frozen=True)
@@ -151,63 +153,66 @@ def _tool_def_for_section(section_code: str) -> dict[str, Any]:
     if cc_codes:
         cc_property["enum"] = cc_codes
 
-    return {
-        "name": "submit_aamc_categorization",
-        "description": "Tag question with AAMC topics, CCs, skills.",
-        # V38: tool def carries the per-section topic_path enum (largest reusable
-        # block per call); attaching cache_control here lets Anthropic's prompt
-        # cache hit on the tool def across same-section calls. Without this
-        # marker the enum is re-billed at full input price every call even
-        # though it never changes inside a section drain.
-        "cache_control": {"type": "ephemeral"},
-        # V45: grammar-constrained sampling. Required JSON-schema subset:
-        # additionalProperties:false on every object; no minimum/maximum on
-        # numbers; no array bounds beyond minItems 0/1. Per §B10 amendment,
-        # strict's schema-complexity ceiling is satisfied here only because
-        # V44 already shrank topic_path string-enum → topic_id int-enum.
-        # Server-side clip to [0,1] on confidence retained as defense-in-depth.
-        "strict": True,
-        "input_schema": {
-            "type": "object",
-            "required": ["primary_aamc_section", "tags"],
-            "additionalProperties": False,
-            "properties": {
-                "primary_aamc_section": {
-                    "type": "string",
-                    "enum": ["CP", "CARS", "BB", "PS"],
-                    "description": "Section.",
-                },
-                "tags": {
-                    "type": "array",
-                    "minItems": 1,
-                    "items": {
-                        "type": "object",
-                        "required": ["kind", "confidence", "rationale"],
-                        "additionalProperties": False,
-                        "properties": {
-                            "kind": {
-                                "type": "string",
-                                "enum": ["topic", "content_category", "skill"],
-                            },
-                            "topic_id": topic_id_property,
-                            "content_category_code": cc_property,
-                            "skill_number": {
-                                "type": "integer",
-                                "enum": [1, 2, 3, 4],
-                                "description": "Required if kind='skill'.",
-                            },
-                            "confidence": {
-                                "type": "number",
-                                "description": "[0,1]; clipped server-side.",
-                            },
-                            "rationale": {
-                                "type": "string",
-                                "description": "1 line.",
-                            },
+    # OpenAI function-tool shape. V45 (reworked): `strict: true` enables
+    # grammar-constrained sampling on chat-completions tool calls. JSON-schema
+    # subset honored: `additionalProperties:false`, no min/max on numbers,
+    # no `minItems`/`maxItems`. V44's int-encoded `topic_id` keeps the schema
+    # under OpenAI's enum-size limit. V38 retired — no `cache_control`.
+    parameters = {
+        "type": "object",
+        "required": ["primary_aamc_section", "tags"],
+        "additionalProperties": False,
+        "properties": {
+            "primary_aamc_section": {
+                "type": "string",
+                "enum": ["CP", "CARS", "BB", "PS"],
+                "description": "Section.",
+            },
+            "tags": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": [
+                        "kind",
+                        "topic_id",
+                        "content_category_code",
+                        "skill_number",
+                        "confidence",
+                        "rationale",
+                    ],
+                    "additionalProperties": False,
+                    "properties": {
+                        "kind": {
+                            "type": "string",
+                            "enum": ["topic", "content_category", "skill"],
+                        },
+                        "topic_id": {**topic_id_property, "type": ["integer", "null"]},
+                        "content_category_code": {**cc_property, "type": ["string", "null"]},
+                        "skill_number": {
+                            "type": ["integer", "null"],
+                            "enum": [1, 2, 3, 4, None],
+                            "description": "Required if kind='skill'.",
+                        },
+                        "confidence": {
+                            "type": "number",
+                            "description": "[0,1]; clipped server-side.",
+                        },
+                        "rationale": {
+                            "type": "string",
+                            "description": "1 line.",
                         },
                     },
                 },
             },
+        },
+    }
+    return {
+        "type": "function",
+        "function": {
+            "name": "submit_aamc_categorization",
+            "description": "Tag question with AAMC topics, CCs, skills.",
+            "strict": True,
+            "parameters": parameters,
         },
     }
 
@@ -292,10 +297,24 @@ def _format_user_message(question: Question) -> str:
     return f"Tags:\n{raw_tags}\n\nQ:\n{stem}{expl_block}\n"
 
 
-def _extract_tool_call(message: Message) -> ToolUseBlock | None:
-    for block in message.content or []:
-        if isinstance(block, ToolUseBlock) and block.name == "submit_aamc_categorization":
-            return block
+def _extract_tool_call(completion: ChatCompletion) -> dict[str, Any] | None:
+    """Return the parsed `arguments` dict for the
+    `submit_aamc_categorization` tool call, or None.
+
+    OpenAI returns `tool_calls[].function.arguments` as a JSON string under
+    strict mode (the SDK does not parse it for us). We `json.loads` once here
+    and return the dict; downstream `_parse_tool_input` is shape-agnostic.
+    """
+    choice = completion.choices[0] if completion.choices else None
+    if choice is None or choice.message is None:
+        return None
+    for call in choice.message.tool_calls or []:
+        if call.function and call.function.name == "submit_aamc_categorization":
+            try:
+                return json.loads(call.function.arguments or "{}")
+            except json.JSONDecodeError as exc:
+                logger.warning("categorize: tool arguments not valid JSON: %s", exc)
+                return None
     return None
 
 
@@ -438,11 +457,12 @@ def _compute_cost(
     *,
     model: str,
 ) -> float:
-    """Estimate USD cost from the SDK's token breakdown.
+    """Estimate USD cost from OpenAI's `usage` breakdown.
 
-    `input_tokens` from the SDK excludes both cache-read and cache-creation.
-    Cache-creation tokens bill at the regular input rate (one-time);
-    cache-read tokens bill at the discounted rate.
+    V-L1: OpenAI `usage.prompt_tokens` includes cached tokens; the cached
+    slice is read from `prompt_tokens_details.cached_tokens`. Pass
+    `input_tokens` as the uncached prompt slice (prompt_tokens − cached) and
+    `cached_input_read` as `cached_tokens`; both are billed at their own rate.
     """
     p = _pricing_for(model)
     return (
@@ -455,7 +475,7 @@ def _compute_cost(
 async def categorize(
     question: Question,
     *,
-    anthropic_client: AsyncAnthropic,
+    openai_client: AsyncOpenAI,
     outline_lookup: OutlineLookup,  # noqa: ARG001 — accepted per spec, not currently used
     cache: "CategorizerCache | None" = None,
     extractor_version: str = EXTRACTOR_VERSION,
@@ -533,46 +553,51 @@ async def categorize(
     )
     if numbered_topic_block:
         system_block_2_text += f"\n\n{numbered_topic_block}"
-    system_blocks = [
-        {"type": "text", "text": _SYSTEM_PROMPT_PREAMBLE},
-        {
-            "type": "text",
-            "text": system_block_2_text,
-            "cache_control": {"type": "ephemeral"},
-        },
-    ]
+    # V38 retired: OpenAI auto-caches stable prefixes — concat into one system
+    # message preserving order (preamble first, then the cacheable outline).
+    system_text = _SYSTEM_PROMPT_PREAMBLE + "\n\n" + system_block_2_text
     user_message = _format_user_message(question)
     tool_def = _tool_def_for_section(section_code)
 
-    response = await anthropic_client.messages.create(
+    response = await openai_client.chat.completions.create(
         model=resolved_model,
-        max_tokens=MAX_TOKENS,
-        system=system_blocks,
+        max_completion_tokens=MAX_TOKENS,
+        messages=[
+            {"role": "system", "content": system_text},
+            {"role": "user", "content": user_message},
+        ],
         tools=[tool_def],
-        tool_choice={"type": "tool", "name": "submit_aamc_categorization"},
-        messages=[{"role": "user", "content": user_message}],
+        tool_choice={
+            "type": "function",
+            "function": {"name": "submit_aamc_categorization"},
+        },
     )
 
-    input_tokens = response.usage.input_tokens or 0
-    output_tokens = response.usage.output_tokens or 0
-    cached_input_read = getattr(response.usage, "cache_read_input_tokens", 0) or 0
-    cache_creation = getattr(response.usage, "cache_creation_input_tokens", 0) or 0
+    usage = response.usage
+    prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+    output_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+    cached_input_read = 0
+    details = getattr(usage, "prompt_tokens_details", None)
+    if details is not None:
+        cached_input_read = int(getattr(details, "cached_tokens", 0) or 0)
+    # V-L1: cache-hit accounting from `cached_tokens`, never inferred.
+    uncached_input = max(prompt_tokens - cached_input_read, 0)
     cost = _compute_cost(
-        input_tokens + cache_creation,
+        uncached_input,
         output_tokens,
         cached_input_read,
         model=resolved_model,
     )
 
-    tool_call = _extract_tool_call(response)
-    if tool_call is None:
+    tool_args = _extract_tool_call(response)
+    if tool_args is None:
         msg = "LLM did not call submit_aamc_categorization"
         logger.warning("categorize qid=%s: %s", question.qid, msg)
         result = CategorizeResult(
             suggestions=[],
             primary_aamc_section=None,
             cache_hit=False,
-            input_tokens=input_tokens + cache_creation + cached_input_read,
+            input_tokens=prompt_tokens,
             output_tokens=output_tokens,
             estimated_cost_usd=cost,
             extractor_version=extractor_version,
@@ -585,7 +610,7 @@ async def categorize(
         return result
 
     suggestions, primary, warnings = _parse_tool_input(
-        tool_call.input,  # type: ignore[arg-type]
+        tool_args,
         topic_paths_for_section=section_topic_paths,
     )
 
@@ -593,7 +618,7 @@ async def categorize(
         suggestions=suggestions,
         primary_aamc_section=primary,
         cache_hit=False,
-        input_tokens=input_tokens + cache_creation + cached_input_read,
+        input_tokens=prompt_tokens,
         output_tokens=output_tokens,
         estimated_cost_usd=cost,
         extractor_version=extractor_version,
@@ -605,13 +630,12 @@ async def categorize(
         cache.put(cache_key, result, extractor_version, model=resolved_model)
 
     logger.info(
-        "categorize qid=%s model=%s section=%s in=%d cache_create=%d cache_read=%d "
+        "categorize qid=%s model=%s section=%s prompt=%d cache_read=%d "
         "out=%d cost=$%.4f suggestions=%d warnings=%d",
         question.qid,
         resolved_model,
         section_code,
-        input_tokens,
-        cache_creation,
+        prompt_tokens,
         cached_input_read,
         output_tokens,
         cost,

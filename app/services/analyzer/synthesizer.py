@@ -13,21 +13,25 @@ import json
 import logging
 from dataclasses import asdict, dataclass
 
-from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.services.analyzer.patterns import AnalysisFilter, InsightReport, analyze
 from app.services.analyzer.synthesizer_cache import SynthesizerCache
 
 logger = logging.getLogger(__name__)
 
-EXTRACTOR_VERSION = "synthesizer-v1-claude-sonnet-4-6"
-MODEL = "claude-sonnet-4-6"
+EXTRACTOR_VERSION = "synthesizer-v2-openai"
+MODEL = settings.FEATURE_EXTRACTOR_MODEL
 TARGET_OUTPUT_TOKENS = 800
 
 _PRICING = {
-    "claude-sonnet-4-6": {"input": 3.0, "output": 15.0, "cached_read": 0.30},
-    "claude-haiku-4-5-20251001": {"input": 1.0, "output": 5.0, "cached_read": 0.10},
+    "gpt-4.1": {"input": 2.0, "output": 8.0, "cached_read": 0.50},
+    "gpt-4.1-mini": {"input": 0.40, "output": 1.60, "cached_read": 0.10},
+    "gpt-4.1-nano": {"input": 0.10, "output": 0.40, "cached_read": 0.025},
+    "gpt-4o": {"input": 2.50, "output": 10.0, "cached_read": 1.25},
+    "gpt-4o-mini": {"input": 0.15, "output": 0.60, "cached_read": 0.075},
 }
 
 _SYSTEM_PROMPT = """\
@@ -91,8 +95,8 @@ this filter. Attempt more questions in this category and re-run.\
 def _pricing_for(model: str) -> dict[str, float]:
     if model in _PRICING:
         return _PRICING[model]
-    logger.warning("no pricing known for model=%r; using Sonnet rates", model)
-    return _PRICING["claude-sonnet-4-6"]
+    logger.warning("no pricing known for model=%r; using gpt-4.1-mini rates", model)
+    return _PRICING["gpt-4.1-mini"]
 
 
 def _compute_cost(
@@ -210,7 +214,7 @@ def _is_valid_markdown(text: str) -> bool:
 async def synthesize(
     report: InsightReport,
     *,
-    anthropic_client: AsyncAnthropic,
+    openai_client: AsyncOpenAI,
     cache: SynthesizerCache,
     bust_cache: bool = False,
     run_llm: bool = True,
@@ -260,38 +264,39 @@ async def synthesize(
         logger.debug("synthesize: cache miss and run_llm=False, returning None")
         return None
 
-    system_blocks = [
-        {
-            "type": "text",
-            "text": _SYSTEM_PROMPT,
-            "cache_control": {"type": "ephemeral"},
-        }
-    ]
     user_message = _format_user_message(report)
 
-    response = await anthropic_client.messages.create(
+    # V38 retired: OpenAI auto-caches stable prefixes.
+    response = await openai_client.chat.completions.create(
         model=model,
-        max_tokens=TARGET_OUTPUT_TOKENS,
-        system=system_blocks,
-        messages=[{"role": "user", "content": user_message}],
+        max_completion_tokens=TARGET_OUTPUT_TOKENS,
+        messages=[
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": user_message},
+        ],
     )
 
-    input_tokens = response.usage.input_tokens or 0
-    output_tokens = response.usage.output_tokens or 0
-    cached_input_read = getattr(response.usage, "cache_read_input_tokens", 0) or 0
-    cache_creation = getattr(response.usage, "cache_creation_input_tokens", 0) or 0
+    usage = response.usage
+    prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+    output_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+    cached_input_read = 0
+    details = getattr(usage, "prompt_tokens_details", None)
+    if details is not None:
+        cached_input_read = int(getattr(details, "cached_tokens", 0) or 0)
+    uncached_input = max(prompt_tokens - cached_input_read, 0)
     cost = _compute_cost(
-        input_tokens + cache_creation,
+        uncached_input,
         output_tokens,
         cached_input_read,
         model=model,
     )
+    input_tokens = prompt_tokens
 
     raw_text = ""
-    if response.content:
-        first = response.content[0]
-        if hasattr(first, "text"):
-            raw_text = first.text
+    if response.choices:
+        first = response.choices[0]
+        if first.message and first.message.content:
+            raw_text = first.message.content
 
     markdown = raw_text.strip()
 
@@ -303,16 +308,15 @@ async def synthesize(
         markdown = _FALLBACK_MARKDOWN
 
     logger.info(
-        "synthesize model=%s in=%d cache_create=%d cache_read=%d out=%d cost=$%.4f",
+        "synthesize model=%s prompt=%d cache_read=%d out=%d cost=$%.4f",
         model,
         input_tokens,
-        cache_creation,
         cached_input_read,
         output_tokens,
         cost,
     )
 
-    total_input = input_tokens + cache_creation + cached_input_read
+    total_input = input_tokens
     cache.put(
         cache_key,
         markdown,
@@ -340,7 +344,7 @@ async def insights_for_filter(
     filter: AnalysisFilter,
     session: AsyncSession,
     *,
-    anthropic_client: AsyncAnthropic,
+    openai_client: AsyncOpenAI,
     cache: SynthesizerCache,
     bust_cache: bool = False,
     run_llm: bool = True,
@@ -351,7 +355,7 @@ async def insights_for_filter(
     report = await analyze(filter, session)
     return await synthesize(
         report,
-        anthropic_client=anthropic_client,
+        openai_client=openai_client,
         cache=cache,
         bust_cache=bust_cache,
         run_llm=run_llm,

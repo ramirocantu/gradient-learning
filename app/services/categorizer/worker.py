@@ -11,7 +11,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable
 
-from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -93,7 +93,7 @@ class WorkerSummary:
 async def run(
     session: AsyncSession,
     *,
-    anthropic_client: AsyncAnthropic,
+    openai_client: AsyncOpenAI,
     batch_size: int = 100,
     dry_run: bool = False,
     lookup: OutlineLookup | None = None,
@@ -154,7 +154,7 @@ async def run(
                         q_id,
                         session,
                         lookup=lookup,
-                        anthropic_client=anthropic_client,
+                        openai_client=openai_client,
                         cache=cache,
                     )
                 summary.succeeded += 1

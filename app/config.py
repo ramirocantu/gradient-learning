@@ -12,13 +12,14 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
         # If a shell exports an env var as empty (e.g. Claude Code sets
-        # ANTHROPIC_API_KEY="" for sandbox safety), prefer the .env file value
+        # OPENAI_API_KEY="" for sandbox safety), prefer the .env file value
         # over the empty OS env var.
         env_ignore_empty=True,
     )
 
     DATABASE_URL: str
-    ANTHROPIC_API_KEY: str
+    OPENAI_API_KEY: str = ""
+    OPENAI_BASE_URL: str | None = None
     COACH_TOKEN: str = "change_me_before_use"
     MEDIA_ROOT: Path = _BACKEND_ROOT / "data" / "media"
 
@@ -28,17 +29,22 @@ class Settings(BaseSettings):
     # process is reachable at a non-default origin.
     BACKEND_BASE_URL: str = "http://localhost:8000"
 
-    # Categorizer (Ticket 3.4). Switched to Haiku after 3.5's eval showed 80% perfect-match
-    # and 90% strong-match agreement with Sonnet on canonical outputs at ~2× lower cost.
-    CATEGORIZER_MODEL: str = "claude-haiku-4-5-20251001"
+    # OpenAI model selection (P0 pivot). Single tagging/facts model + a
+    # logprobs-capable calibrator. Per §C, the calibrator MUST be a standard
+    # (non-reasoning) chat model — o-series models don't expose logprobs.
+    # Picked in the T5 spike; override via .env if a re-eval rotates them.
+    OPENAI_MODEL: str = "gpt-4.1-mini"
+    OPENAI_CALIBRATOR_MODEL: str = "gpt-4.1-mini"
+    EMBEDDING_MODEL: str = "text-embedding-3-small"
+
+    # Per-call model overrides. Default to OPENAI_MODEL; .env can split them.
+    CATEGORIZER_MODEL: str = "gpt-4.1-mini"
     CATEGORIZER_CACHE_PATH: Path = _BACKEND_ROOT / "data" / "categorizer-cache.db"
 
-    # Feature extractor (Ticket 4.2). Sonnet by default per CLAUDE.md — feature
-    # extraction makes subjective judgment calls (distractor difficulty, jargon,
-    # trap presence) where Sonnet's reasoning pays off. A future ticket may run
-    # a Haiku eval, but the categorizer eval doesn't generalize: different task,
-    # different signal-to-noise.
-    FEATURE_EXTRACTOR_MODEL: str = "claude-sonnet-4-6"
+    # Feature extractor (Ticket 4.2). Heavier judgment calls — pin to the
+    # full GPT-4.1 by default; the spike (T5) may bump this to a thinking
+    # model after a re-eval. Override via .env without code change.
+    FEATURE_EXTRACTOR_MODEL: str = "gpt-4.1"
     FEATURE_EXTRACTOR_CACHE_PATH: Path = _BACKEND_ROOT / "data" / "feature-extractor-cache.db"
 
     # Insight synthesizer (Ticket 4.5). Sonnet per CLAUDE.md convention.
@@ -62,8 +68,8 @@ class Settings(BaseSettings):
 
     # Anki topic resolver (SPEC §T32). LLM pass over cards already parsed as
     # aamc_cc — emits a topic_id suggestion under the parsed CC. Mirrors the
-    # UWorld categorizer pattern (Haiku, structured output, SQLite cache).
-    ANKI_TOPIC_RESOLVER_MODEL: str = "claude-haiku-4-5-20251001"
+    # UWorld categorizer pattern (cheap chat model, structured output, SQLite cache).
+    ANKI_TOPIC_RESOLVER_MODEL: str = "gpt-4.1-mini"
     ANKI_TOPIC_RESOLVER_CACHE_PATH: Path = _BACKEND_ROOT / "data" / "anki-topic-resolver-cache.db"
     ANKI_TOPIC_RESOLVER_INTERVAL_MINUTES: int = 60
     ANKI_TOPIC_RESOLVER_PER_RUN_BUDGET_USD: float = 0.50

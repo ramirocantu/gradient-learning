@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from typing import Any, Callable
 
-from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 from sqlalchemy import exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -178,7 +178,7 @@ def _compute_distributions(
 async def run_extraction(
     session_factory: SessionFactory,
     *,
-    anthropic_client: AsyncAnthropic,
+    openai_client: AsyncOpenAI,
     cache: FeatureExtractorCache | None = None,
     missed_only: bool = False,
     since: date | None = None,
@@ -227,7 +227,7 @@ async def run_extraction(
                         result = await extract_features_for_question(
                             q_id,
                             session,
-                            anthropic_client=anthropic_client,
+                            openai_client=openai_client,
                             cache=cache,
                         )
                         if not dry_run:

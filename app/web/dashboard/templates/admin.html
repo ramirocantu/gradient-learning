@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+
+{% block title %}Admin — MCAT Coach{% endblock %}
+
+{% block content %}
+<div class="space-y-10">
+    <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100">Admin</h1>
+
+    {% for job in jobs %}
+    <section class="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-6 space-y-4">
+        <div class="flex items-center justify-between">
+            <div>
+                <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">{{ job.display_name }}</h2>
+                <p class="text-sm text-gray-500 dark:text-gray-400">
+                    {% if job.next_run_time %}
+                        Next run: {{ job.next_run_time }}
+                    {% else %}
+                        Scheduler offline or disabled
+                    {% endif %}
+                </p>
+            </div>
+            <div class="flex items-center gap-3">
+                <button
+                    hx-post="/admin/jobs/{{ job.name }}/trigger"
+                    hx-target="#feedback-{{ job.name }}"
+                    hx-swap="innerHTML"
+                    class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-md transition-colors"
+                >
+                    Run now
+                </button>
+                <span id="feedback-{{ job.name }}" class="text-sm text-gray-600 dark:text-gray-400"></span>
+            </div>
+        </div>
+
+        {% if job.runs %}
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm text-left">
+                <thead class="text-xs text-gray-500 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-700">
+                    <tr>
+                        <th class="pb-2 pr-4">Started</th>
+                        <th class="pb-2 pr-4">Duration</th>
+                        <th class="pb-2 pr-4">Status</th>
+                        <th class="pb-2 pr-4">Items</th>
+                        <th class="pb-2">Cost</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
+                    {% for run in job.runs %}
+                    <tr>
+                        <td class="py-2 pr-4 text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                            {{ run.started_at.strftime("%Y-%m-%d %H:%M:%S") if run.started_at else "—" }}
+                        </td>
+                        <td class="py-2 pr-4 text-gray-700 dark:text-gray-300">
+                            {% if run.finished_at and run.started_at %}
+                                {{ ((run.finished_at - run.started_at).total_seconds() | int) }}s
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                        <td class="py-2 pr-4">
+                            {% if run.status.value == "running" %}
+                                <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">running</span>
+                            {% elif run.status.value == "succeeded" %}
+                                <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">succeeded</span>
+                            {% else %}
+                                <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">failed</span>
+                            {% endif %}
+                        </td>
+                        <td class="py-2 pr-4 text-gray-700 dark:text-gray-300">{{ run.items_processed }}</td>
+                        <td class="py-2 text-gray-700 dark:text-gray-300">
+                            {% if run.cost_usd is not none %}
+                                ${{ "%.4f" | format(run.cost_usd | float) }}
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-sm text-gray-400 dark:text-gray-500 italic">No runs recorded yet.</p>
+        {% endif %}
+    </section>
+    {% endfor %}
+
+    {# SPEC §T28 + §T33 — Anki tag-parse health widget with per-card coverage (§V23). #}
+    <section class="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-6 space-y-4">
+        <div>
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Anki tag-parse health</h2>
+            <p class="text-sm text-gray-500 dark:text-gray-400">
+                {% if anki_tag_parse.total == 0 %}
+                    No Anki tags ingested yet. Run an Anki sync to populate.
+                {% else %}
+                    {{ anki_tag_parse.total }} tag rows over {{ anki_tag_parse.total_cards }} cards;
+                    unparsed share: {{ "%.1f" | format(anki_tag_parse.unparsed_pct) }}%.
+                    Per-row share ≠ per-card coverage — AnKing averages many tags per card, so a low per-row share can still mean high per-card coverage. Check the cards column for the goal-2 signal.
+                {% endif %}
+            </p>
+        </div>
+
+        {% if anki_tag_parse.total > 0 %}
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm text-left">
+                <thead class="text-xs text-gray-500 dark:text-gray-400 uppercase border-b border-gray-200 dark:border-gray-700">
+                    <tr>
+                        <th class="pb-2 pr-4">parsed_kind</th>
+                        <th class="pb-2 pr-4">tag rows</th>
+                        <th class="pb-2 pr-4">row share</th>
+                        <th class="pb-2 pr-4">cards covered</th>
+                        <th class="pb-2">card share</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
+                    {% for entry in anki_tag_parse.kinds %}
+                    <tr>
+                        <td class="py-2 pr-4">
+                            {% if entry.label == "aamc_topic" %}
+                                <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">aamc_topic</span>
+                            {% elif entry.label == "aamc_cc" %}
+                                <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200">aamc_cc</span>
+                            {% elif entry.label == "aamc_skill" %}
+                                <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">aamc_skill</span>
+                            {% elif entry.label == "uworld_qid" %}
+                                <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">uworld_qid</span>
+                            {% else %}
+                                <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">unparsed</span>
+                            {% endif %}
+                        </td>
+                        <td class="py-2 pr-4 text-gray-700 dark:text-gray-300">{{ entry.tag_count }}</td>
+                        <td class="py-2 pr-4 text-gray-700 dark:text-gray-300">{{ "%.1f" | format(entry.tag_pct) }}%</td>
+                        <td class="py-2 pr-4 text-gray-700 dark:text-gray-300">{{ entry.card_count }} / {{ anki_tag_parse.total_cards }}</td>
+                        <td class="py-2 text-gray-700 dark:text-gray-300">{{ "%.1f" | format(entry.card_pct) }}%</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

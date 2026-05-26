@@ -1,0 +1,23 @@
+{# Assign-cards control for the Anki state & retention widget (CC + topic
+   mastery pages). Posts to /mastery/assign which calls create_assignment
+   in-process (V18): scope_kind/value identify the subtree; the unlock-job
+   scheduler runs the AnkiConnect unsuspend on/after the chosen date. #}
+<form method="post" action="/mastery/assign" class="flex items-end gap-2" data-assign-form="1">
+  <input type="hidden" name="scope_kind" value="{{ assign_scope_kind }}">
+  <input type="hidden" name="scope_value" value="{{ assign_scope_value }}">
+  <input type="hidden" name="redirect_to" value="{{ assign_redirect_to }}">
+  <label class="flex flex-col text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+    Unlock
+    <input type="date" name="unlock_date" value="{{ assign_today }}"
+           class="mt-0.5 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 text-xs font-normal normal-case text-gray-900 dark:text-gray-100">
+  </label>
+  <label class="flex flex-col text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+    Max
+    <input type="number" name="max_cards" min="1" placeholder="all"
+           class="mt-0.5 w-20 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 text-xs font-normal text-gray-900 dark:text-gray-100">
+  </label>
+  <button type="submit"
+          class="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 dark:focus:ring-offset-gray-900">
+    Assign
+  </button>
+</form>

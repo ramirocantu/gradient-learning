@@ -1,0 +1,78 @@
+{# Expanded question view. Required context: cc_code, full, card. #}
+<div id="question-card-{{ full.question_id }}" class="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 p-5">
+  <div class="flex items-center justify-between mb-4">
+    <div class="text-xs text-gray-500 dark:text-gray-400 font-mono">{{ full.qid }}</div>
+    <button type="button"
+            class="text-xs font-medium px-3 py-1.5 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
+            hx-get="/mastery/{{ cc_code }}/questions/{{ full.question_id }}/card"
+            hx-target="#question-card-{{ full.question_id }}"
+            hx-swap="outerHTML">
+      Collapse
+    </button>
+  </div>
+
+  {% if full.passage_html %}
+    <section class="mb-5">
+      <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">Passage</h3>
+      <div class="prose dark:prose-invert max-w-none text-sm">{{ full.passage_html | safe }}</div>
+    </section>
+  {% endif %}
+
+  <section class="mb-5">
+    <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">Stem</h3>
+    <div class="prose dark:prose-invert max-w-none text-sm">{{ full.stem_html | safe }}</div>
+  </section>
+
+  <section class="mb-5">
+    <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">Choices</h3>
+    <ul class="space-y-2">
+      {% for c in full.choices %}
+        {% set base = "border rounded-md p-3 text-sm" %}
+        {% if c.is_correct and c.is_selected %}
+          {% set classes = base ~ " border-green-300 bg-green-50 dark:bg-green-900/10 dark:border-green-800" %}
+        {% elif c.is_correct %}
+          {% set classes = base ~ " border-green-300 bg-green-50/50 dark:bg-green-900/5 dark:border-green-800" %}
+        {% elif c.is_selected %}
+          {% set classes = base ~ " border-red-300 bg-red-50 dark:bg-red-900/10 dark:border-red-800" %}
+        {% else %}
+          {% set classes = base ~ " border-gray-200 dark:border-gray-800" %}
+        {% endif %}
+        <li class="{{ classes }}">
+          <div class="flex items-start gap-2">
+            <span class="font-bold text-gray-700 dark:text-gray-300">{{ c.key }}.</span>
+            <div class="flex-grow">{{ c.html | safe }}</div>
+            <div class="flex flex-col items-end gap-1 text-[10px] uppercase tracking-wider">
+              {% if c.is_correct %}<span class="text-green-700 dark:text-green-400 font-semibold">Correct</span>{% endif %}
+              {% if c.is_selected %}<span class="text-indigo-700 dark:text-indigo-400 font-semibold">Your pick</span>{% endif %}
+            </div>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  {% if full.explanation_html %}
+    <section class="mb-2">
+      <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">Explanation</h3>
+      <div class="prose dark:prose-invert max-w-none text-sm">{{ full.explanation_html | safe }}</div>
+    </section>
+  {% endif %}
+
+  <div class="mt-4 flex items-center gap-2 border-t border-gray-100 dark:border-gray-800 pt-3">
+    <button type="button"
+            class="text-xs font-medium px-3 py-1.5 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
+            hx-get="/mastery/{{ cc_code }}/questions/{{ full.question_id }}/card"
+            hx-target="#question-card-{{ full.question_id }}"
+            hx-swap="outerHTML">
+      Collapse
+    </button>
+    <button type="button"
+            class="text-xs font-medium px-3 py-1.5 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
+            hx-get="/mastery/{{ cc_code }}/questions/{{ full.question_id }}/retag-form"
+            hx-target="#question-card-{{ full.question_id }}-retag-full"
+            hx-swap="innerHTML">
+      Re-tag
+    </button>
+  </div>
+  <div id="question-card-{{ full.question_id }}-retag-full"></div>
+</div>

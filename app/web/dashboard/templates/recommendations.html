@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+
+{% block title %}Recommendations — MCAT Coach{% endblock %}
+
+{% block content %}
+<div class="space-y-8">
+
+  <!-- Header -->
+  <div>
+    <div class="flex items-center justify-between mb-2">
+      <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Recommendations</h1>
+      <a href="/" class="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 flex items-center gap-1 transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+        Back to Home
+      </a>
+    </div>
+    <p class="text-gray-600 dark:text-gray-400 leading-relaxed">
+      Ranked study targets based on topic accuracy, recent performance, and question patterns.
+    </p>
+  </div>
+
+  <!-- N selector + count badge -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    <div class="inline-flex rounded-md shadow-sm" role="group">
+      {% for opt in [5, 10, 20] %}
+        {% if opt == n %}
+          {% set pill_cls = "bg-indigo-600 text-white border-indigo-600 dark:border-indigo-500" %}
+        {% else %}
+          {% set pill_cls = "bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800" %}
+        {% endif %}
+        <a href="?n={{ opt }}"
+           class="px-4 py-1.5 text-sm font-medium border {{ pill_cls }}
+                  {% if loop.first %}rounded-l-md{% endif %}
+                  {% if loop.last %}rounded-r-md{% endif %}
+                  {% if not loop.first %}-ml-px{% endif %}">
+          Top {{ opt }}
+        </a>
+      {% endfor %}
+    </div>
+    <span class="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+      Showing {{ total }} of {{ total_candidates_scored }} scored candidates
+    </span>
+  </div>
+
+  {% if total == 0 %}
+    <div class="bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-dashed border-gray-300 dark:border-gray-700 p-12 text-center">
+      <p class="text-gray-500 dark:text-gray-400">No recommendations yet. Capture more questions and run feature extraction to surface study targets.</p>
+    </div>
+  {% else %}
+
+  <!-- Section: Topic Weaknesses -->
+  <section>
+    <h2 class="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4 border-b border-gray-200 dark:border-gray-800 pb-2">Topic Weaknesses</h2>
+    {% if topic_recs %}
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {% for rec in topic_recs %}
+          {% set acc_pct = (rec.accuracy * 100) if rec.accuracy is not none else 0 %}
+          {% if rec.accuracy is not none and rec.accuracy < 0.60 %}
+            {% set bar_color = "bg-red-500 dark:bg-red-400" %}
+          {% elif rec.accuracy is not none and rec.accuracy < 0.80 %}
+            {% set bar_color = "bg-yellow-500 dark:bg-yellow-400" %}
+          {% else %}
+            {% set bar_color = "bg-green-500 dark:bg-green-400" %}
+          {% endif %}
+          <div class="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 p-5 hover:shadow-md hover:border-indigo-300 dark:hover:border-indigo-700 transition-all">
+            <a href="/mastery/{{ rec.code }}" class="block">
+              <div class="flex justify-between items-start mb-2">
+                <span class="text-[10px] font-semibold px-2 py-0.5 rounded text-red-700 bg-red-50 dark:bg-red-900/30 dark:text-red-400 uppercase tracking-wider">
+                  Topic
+                </span>
+                <span class="text-xs text-gray-500 dark:text-gray-400">{{ rec.attempts }} questions</span>
+              </div>
+              <h3 class="text-base font-medium text-gray-900 dark:text-gray-100 mb-3 leading-snug line-clamp-2" title="{{ rec.label }}">
+                {{ rec.label }}
+              </h3>
+
+              <div class="mb-3">
+                <div class="w-full h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                  <div class="h-full {{ bar_color }} rounded-full" style="width: {{ acc_pct }}%"></div>
+                </div>
+                <div class="flex items-center justify-between mt-1 text-xs">
+                  {% if rec.accuracy is not none %}
+                    <span class="text-gray-900 dark:text-gray-200 font-semibold">{{ (rec.accuracy * 100)|round(1) }}% accuracy</span>
+                  {% endif %}
+                  {% if rec.wilson_lower is not none %}
+                    <span class="text-gray-400 dark:text-gray-500 uppercase tracking-wider">Wilson floor {{ (rec.wilson_lower * 100)|round(1) }}%</span>
+                  {% endif %}
+                </div>
+              </div>
+
+              <p class="text-sm text-gray-600 dark:text-gray-400 leading-snug">{{ rec.reason }}</p>
+            </a>
+
+            {% if rec.representative_qids %}
+              <div class="mt-3 flex flex-wrap items-center gap-2">
+                <span class="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider">Examples:</span>
+                {% for qid in rec.representative_qids %}
+                  <a href="/questions/by-qid/{{ qid }}"
+                     class="text-[11px] px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-mono hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:text-indigo-700 dark:hover:text-indigo-400 transition-colors">
+                    {{ qid }}
+                  </a>
+                {% endfor %}
+              </div>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-dashed border-gray-300 dark:border-gray-700 p-6 text-center">
+        <p class="text-sm text-gray-500 dark:text-gray-400">No topic weaknesses found. Capture more questions to surface weak areas.</p>
+      </div>
+    {% endif %}
+  </section>
+
+  <!-- Section: Pattern Findings -->
+  <section>
+    <h2 class="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4 border-b border-gray-200 dark:border-gray-800 pb-2">Pattern Findings</h2>
+    {% if pattern_recs %}
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {% for rec in pattern_recs %}
+          {% set with_pct = (rec.accuracy_with * 100)|round(1) if rec.accuracy_with is not none else 0 %}
+          {% set without_pct = (rec.accuracy_without * 100)|round(1) if rec.accuracy_without is not none else 0 %}
+          {% set delta_pp = (without_pct - with_pct)|round(1) if rec.accuracy_with is not none and rec.accuracy_without is not none else 0 %}
+          <div class="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 p-5 hover:shadow-md hover:border-indigo-300 dark:hover:border-indigo-700 transition-all">
+            <a href="/insights" class="block">
+              <div class="flex justify-between items-start mb-2">
+                <span class="text-[10px] font-semibold px-2 py-0.5 rounded text-indigo-700 bg-indigo-50 dark:bg-indigo-900/30 dark:text-indigo-400 uppercase tracking-wider">
+                  Pattern
+                </span>
+                <span class="text-xs text-gray-500 dark:text-gray-400">{{ rec.attempts_with }} questions affected</span>
+              </div>
+              <h3 class="text-base font-medium text-gray-900 dark:text-gray-100 mb-3 leading-snug line-clamp-2">
+                {{ rec.feature_name.replace('_', ' ').title() }}{% if rec.feature_value not in ("True", "False") %}: {{ rec.feature_value }}{% endif %}
+              </h3>
+
+              <div class="flex items-center gap-3 mb-3 text-sm">
+                {% if rec.accuracy_with is not none %}
+                  <span class="text-red-700 dark:text-red-400 font-semibold">With: {{ with_pct }}%</span>
+                {% endif %}
+                <span class="text-xs text-gray-500 dark:text-gray-400">▼ {{ delta_pp }}pp</span>
+                {% if rec.accuracy_without is not none %}
+                  <span class="text-green-700 dark:text-green-400 font-semibold">Without: {{ without_pct }}%</span>
+                {% endif %}
+              </div>
+
+              <p class="text-sm text-gray-600 dark:text-gray-400 leading-snug">{{ rec.reason }}</p>
+            </a>
+
+            {% if rec.representative_qids %}
+              <div class="mt-3 flex flex-wrap items-center gap-2">
+                <span class="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider">Examples:</span>
+                {% for qid in rec.representative_qids %}
+                  <a href="/questions/by-qid/{{ qid }}"
+                     class="text-[11px] px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-mono hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:text-indigo-700 dark:hover:text-indigo-400 transition-colors">
+                    {{ qid }}
+                  </a>
+                {% endfor %}
+              </div>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-dashed border-gray-300 dark:border-gray-700 p-6 text-center">
+        <p class="text-sm text-gray-500 dark:text-gray-400">No pattern findings yet. Run feature extraction via the backend to unlock pattern analysis.</p>
+      </div>
+    {% endif %}
+  </section>
+
+  {% endif %}
+
+</div>
+{% endblock %}

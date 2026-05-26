@@ -16,12 +16,30 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.content_embedding import ContentEmbedding
 from app.services.kb.embeddings import (
+    EXPECTED_DIMS,
     EmbedResult,
     current_version,
     embed_and_persist,
 )
+
+
+def _padded(vec: list[float]) -> list[float]:
+    """Pad / truncate ``vec`` to the dim expected for the configured model.
+
+    The T27 dim guard rejects vectors whose length disagrees with
+    ``EXPECTED_DIMS[settings.EMBEDDING_MODEL]``. Test bodies want to
+    assert on the leading values, so we keep their prefix intact and
+    pad the rest with zeros."""
+
+    dim = EXPECTED_DIMS.get(settings.EMBEDDING_MODEL)
+    if dim is None:
+        return vec
+    if len(vec) >= dim:
+        return vec[:dim]
+    return list(vec) + [0.0] * (dim - len(vec))
 
 
 def _make_embed_client(vec: list[float], *, prompt_tokens: int = 5) -> MagicMock:
@@ -29,8 +47,10 @@ def _make_embed_client(vec: list[float], *, prompt_tokens: int = 5) -> MagicMock
     a CreateEmbeddingResponse-shaped object."""
 
     resp = SimpleNamespace(
-        data=[SimpleNamespace(embedding=vec, index=0, object="embedding")],
-        model="text-embedding-3-small",
+        data=[
+            SimpleNamespace(embedding=_padded(vec), index=0, object="embedding")
+        ],
+        model=settings.EMBEDDING_MODEL,
         object="list",
         usage=SimpleNamespace(prompt_tokens=prompt_tokens, total_tokens=prompt_tokens),
     )
@@ -58,7 +78,7 @@ async def test_embed_writes_row_with_version_stamp(db_session: AsyncSession):
     assert isinstance(result, EmbedResult)
     assert result.reused is False
     assert result.tokens == 5
-    assert result.row.embedding == [0.1, 0.2, 0.3]
+    assert result.row.embedding[:3] == [0.1, 0.2, 0.3]
     assert result.row.embedding_version == current_version()
     client.embeddings.create.assert_awaited_once()
 

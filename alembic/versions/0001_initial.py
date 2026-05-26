@@ -405,6 +405,11 @@ def downgrade() -> None:
     op.drop_index('ix_task_runs_job_started', table_name='task_runs')
     op.drop_index(op.f('ix_task_runs_job_name'), table_name='task_runs')
     op.drop_table('task_runs')
+    # T27 fix: sa.Enum auto-creates the named TYPE on first CREATE TABLE
+    # but DROP TABLE leaves it orphaned. Subsequent `upgrade head` after a
+    # `downgrade base` would CREATE TYPE again → DuplicateObjectError.
+    # Drop the type explicitly so the up→down→up roundtrip is clean.
+    op.execute("DROP TYPE IF EXISTS task_run_status")
     op.drop_index('ix_raw_captures_qid_with_warnings', table_name='raw_captures', postgresql_where=sa.text('parse_warnings IS NOT NULL'))
     op.drop_index('ix_raw_captures_qid', table_name='raw_captures')
     op.drop_index('ix_raw_captures_captured_at', table_name='raw_captures')

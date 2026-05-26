@@ -21,11 +21,44 @@ from app.models.content_embedding import ContentEmbedding
 _logger = logging.getLogger("app.services.kb.embeddings")
 
 
+# V-E1 dim guard. The DB column is JSONB placeholder until pgvector
+# lands (T24 note); until then, dim enforcement is app-level. Any
+# embedding whose length does not match the expected dim for the
+# configured model raises ``DimMismatchError`` before persistence —
+# this keeps the "⊥ mixed-dim vectors in one column" rule meaningful
+# even without a typed column to reject the bad row at the DB layer.
+# A model not in this map is treated as "unknown dim" (validation
+# skipped); callers who care about strict enforcement should add an
+# entry or set the version explicitly.
+EXPECTED_DIMS: dict[str, int] = {
+    "text-embedding-3-small": 1536,
+    "text-embedding-3-large": 3072,
+    "text-embedding-ada-002": 1536,
+    "bge-base-en-v1.5": 768,
+    "bge-large-en-v1.5": 1024,
+}
+
+
+class DimMismatchError(ValueError):
+    """V-E1: an embedding vector's length disagrees with EXPECTED_DIMS
+    for the configured ``EMBEDDING_MODEL``. Raising before
+    ``session.add`` keeps the content_embeddings column homogeneous.
+    """
+
+
 @dataclass
 class EmbedResult:
     row: ContentEmbedding
     reused: bool        # True when an existing same-version row was returned
     tokens: int         # OpenAI usage.prompt_tokens, 0 if reused
+
+
+def expected_dim(model: str | None = None) -> int | None:
+    """Return the canonical dim for ``model`` (defaults to the configured
+    ``EMBEDDING_MODEL``), or ``None`` when the model isn't in the map.
+    """
+
+    return EXPECTED_DIMS.get(model or settings.EMBEDDING_MODEL)
 
 
 def current_version() -> str:
@@ -77,6 +110,15 @@ async def embed_and_persist(
     vec = list(resp.data[0].embedding)
     usage = getattr(resp, "usage", None)
     tokens = int(getattr(usage, "prompt_tokens", 0)) if usage is not None else 0
+
+    # V-E1: enforce homogeneous dim per content_embeddings column.
+    exp = expected_dim()
+    if exp is not None and len(vec) != exp:
+        raise DimMismatchError(
+            f"embedding dim {len(vec)} != expected {exp} for model "
+            f"{settings.EMBEDDING_MODEL!r}; bump EMBEDDING_MODEL "
+            "(and re-embed under a new version) to rotate dim."
+        )
 
     row = ContentEmbedding(
         entity_kind=entity_kind,

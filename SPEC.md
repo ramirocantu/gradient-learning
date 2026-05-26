@@ -311,7 +311,7 @@ P0 — schema generalize + OpenAI pivot. Ids are monotonic, not positional: T12�
 | T32 | . | (P4) Notion page/block append+update as one-way replica over `notion_pages` pointer; backlinks question/node anchors; idempotent re-sync; ⊥ read-back | V-N1,V-N2,V-M3 |
 | T33 | . | (P4) expand source adapters under `app/services/adapters/`: manual entry → web-Qbank (extension) → PDF question-set parser (hardest, last); only after write-back stable | I.captures,§A |
 | T34 | . | (P4) reassess T16 SPA redesign: if stabilized `/api/v1/*` contracts (node-based reads + KB substrate + write-back) justify, invoke `frontend-design` plugin per view and flip T16 to `~`; otherwise prune T16 | V-D1,§A |
-| T35 | . | (P0.5) rewrite per-extractor tests (`test_categorizer_llm`, `test_anki_topic_resolver`, `test_feature_extractor`, `test_synthesizer`, `test_analyzer_endpoint`, `test_scheduler`, `tests/web/dashboard/test_insights`) onto OpenAI SDK boundary via `tests/_openai_mocks.py`; drop V38 `cache_control` asserts; `ToolUseBlock` isinstance → `response_format` json_schema content reads; mark `tests/test_llm_batch.py` skip-all (batch retired in T4); T4 follow-up the smoke test stood in for | V16,V38,V45 |
+| T35 | x | (P0.5) rewrite per-extractor tests (`test_categorizer_llm`, `test_anki_topic_resolver`, `test_feature_extractor`, `test_synthesizer`, `test_analyzer_endpoint`, `test_scheduler`, `tests/web/dashboard/test_insights`) onto OpenAI SDK boundary via `tests/_openai_mocks.py`; drop V38 `cache_control` asserts; `ToolUseBlock` isinstance → `response_format` json_schema content reads; mark `tests/test_llm_batch.py` skip-all (batch retired in T4); T4 follow-up the smoke test stood in for | V16,V38,V45 |
 
 ## §B — bug log
 

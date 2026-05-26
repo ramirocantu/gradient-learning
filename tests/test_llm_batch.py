@@ -1,6 +1,10 @@
 """Unit tests for the generic batches wrapper (SPEC §T51).
 
-Mock the Anthropic SDK at `client.messages.batches.{create,retrieve,results}`.
+SKIPPED (T35, T4): the Anthropic Message-Batches API was retired in T4
+(`app/services/llm/batch.py` raises `BatchRetired` on every entry
+point). Re-coverage on `openai.batches.*` lands if/when a 50% discount
+or queue-load argument re-enables the surface; until then this whole
+module is dormant.
 """
 
 from __future__ import annotations
@@ -15,6 +19,13 @@ from app.services.llm.batch import (
     get_batch_status,
     iter_batch_results,
     submit_batch,
+)
+
+pytestmark = pytest.mark.skip(
+    reason=(
+        "T35 / T4: Anthropic Message-Batches retired; "
+        "port to openai.batches.* tracked separately"
+    )
 )
 
 

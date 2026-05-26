@@ -149,7 +149,7 @@ async def test_run_categorizer_job_succeeds(test_engine):
 
     with (
         patch("app.scheduler.AsyncSessionLocal", Sm),
-        patch("app.scheduler.AsyncAnthropic"),
+        patch("app.scheduler.build_openai_client"),
         patch("app.scheduler.CategorizerCache"),
         patch("app.scheduler.OutlineLookup.load", new_callable=AsyncMock),
         patch(
@@ -176,7 +176,7 @@ async def test_run_categorizer_job_fails(test_engine):
 
     with (
         patch("app.scheduler.AsyncSessionLocal", Sm),
-        patch("app.scheduler.AsyncAnthropic"),
+        patch("app.scheduler.build_openai_client"),
         patch("app.scheduler.CategorizerCache"),
         patch("app.scheduler.OutlineLookup.load", new_callable=AsyncMock),
         patch(

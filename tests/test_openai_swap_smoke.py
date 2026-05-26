@@ -1,12 +1,20 @@
-"""Smoke test for the T4 OpenAI SDK swap.
+"""Per-extractor OpenAI-SDK-boundary coverage (T35; V16, V38, V45).
 
-Proves that every extractor — categorizer, anki topic resolver, feature
-extractor, synthesizer — can be driven through its public API with a
-forged `ChatCompletion` and produces the expected typed result. The
-historical per-extractor tests are heavily Anthropic-SDK-shaped (cache_control
-markers, ToolUseBlock isinstance asserts) and need a coordinated rewrite;
-this file is the bridging proof that the SDK swap is end-to-end functional
-while that rewrite lands (tracked alongside T4 in §T).
+After the 2026-05-26 rescope:
+  - the anki-topic-resolver / feature-extractor / synthesizer / analyzer
+    surfaces are FENCED (T17), so their per-extractor test modules were
+    pruned in T20;
+  - the categorizer is the sole live extractor on the OpenAI boundary,
+    and its historical Anthropic-shaped test module
+    (`tests/test_categorizer_llm.py`, ~760 lines) was deleted in T35
+    because it both mocked the wrong SDK and used the dropped
+    `OutlineLookup(sections_by_code=…, ccs_by_code=…, topics=…)` shape.
+
+This file is now the per-extractor surface for the live categorizer:
+forged `ChatCompletion`s built via `tests/_openai_mocks.py`, OpenAI
+`response_format: json_schema, strict:true` checks (V45), and
+explicit V38 asserts that no `cache_control` markers leak. Coverage
+extends when new live extractors land on OpenAI.
 """
 
 from __future__ import annotations

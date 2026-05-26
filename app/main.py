@@ -17,6 +17,7 @@ from app.api.v1.anki_load import router as anki_load_router
 from app.api.v1.anki_review import router as anki_review_router
 from app.api.v1.attempts import router as attempts_router
 from app.api.v1.captures import router as captures_router
+from app.api.v1.outline import router as outline_router
 from app.api.v1.recommendations import router as recommendations_router
 from app.api.v1.tutor import router as tutor_router
 from app.scheduler import start_scheduler, stop_scheduler
@@ -48,6 +49,7 @@ app.add_middleware(
 
 v1 = APIRouter(prefix="/api/v1")
 v1.include_router(captures_router)
+v1.include_router(outline_router)
 v1.include_router(admin_router)
 v1.include_router(analytics_router)
 v1.include_router(analyzer_router)

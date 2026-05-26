@@ -256,7 +256,7 @@ P0 — schema generalize + OpenAI pivot. Ids are monotonic, not positional: T12�
 | T6 | x | structured output rework: OpenAI `response_format: json_schema, strict:true`; int-encode large enums before strict (honor enum-count/length limits); dual-surface NL list + `[1..N]` enum; server-side belt retained | V44,V45 |
 | T7 | x | calibration via OpenAI logprobs: discriminator Yes/No on plain completion; `Conf=exp(L_yes)/(exp(L_yes)+exp(L_no))`; `<0.5`→`manual_review` | V69,V-T3 |
 | T8 | x | V41 worker partial-failure: per-item catch `openai.APIError`/`RateLimitError`/`InternalServerError`, log WARN, break early, return `partial_failure=True`+counts; scheduler reaches `commit()`; `task_run.status='succeeded'` | V41 |
-| T9 | . | reseed AAMC as uploaded schema: `seeds/aamc_outline.schema.json` + validate-then-materialize importer (`POST /courses/{id}/outline:import`); re-upload restores MCAT | V-O2,V-O3,I.outline-import |
+| T9 | x | reseed AAMC as uploaded schema: `seeds/aamc_outline.schema.json` + validate-then-materialize importer (`POST /courses/{id}/outline:import`); re-upload restores MCAT | V-O2,V-O3,I.outline-import |
 | T10 | . | V-L2 GATE: measurement harness re-runs categorizer + anki-topic-resolver eval on chosen OpenAI model; record jaccard/set-equality vs PoC Claude baseline; regression blocks pivot | V-L2,V44 |
 | T11 | . | fix `README.md` `backend/` subdir reference (repo has no `backend/`) | §O |
 | T12 | x | port categorizer + outline resolution → `node_id`: `app/services/categorizer/outline_lookup.py` (resolve node by ` >> ` path, ⊥ section/cc/topic codes) + categorizer job + `app/api/v1/recommendations.py` | V-O1,V-T1,V-T2 |

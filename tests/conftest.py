@@ -38,6 +38,10 @@ collect_ignore_glob = [
     "web/dashboard/test_topic_drilldown.py",
     "web/dashboard/test_anki_scope.py",
     "web/dashboard/test_insights.py",
+    # T18 (V-RB2): anki state/retention test modules exercise the FENCED
+    # raw-SQL surfaces. Restoration tied to node_id subtree port.
+    "test_anki_state.py",
+    "test_anki_retention.py",
 ]
 
 _HOST_PORT = os.environ.get("HOST_POSTGRES_PORT", "5432")

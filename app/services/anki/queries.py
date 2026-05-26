@@ -1,11 +1,20 @@
 """Read queries against anki_cards / anki_note_tags.
 
-T13 port: the topic/CC-subtree query helpers used the dropped `topics` +
-`content_categories` tables and the renamed-away `AnkiNoteTag.topic_id` /
-`.content_category_id` columns. They're stubbed to empty until T14 ports them
-onto `node_id` + the V-O1 subtree-set helper. The outline-free helpers
-(`list_review_queue`, `list_cards_for_qid`, the tag-parse stats,
-`get_anki_card_total`) work unchanged on the canonical `anki_note_tags`.
+Partially FENCED (T18, V-RB2, V-O5). The topic/CC-subtree query helpers
+(`list_cards_for_topic`, `list_cards_for_cc`, `list_review_queue_for_cc`,
+`list_review_queue_for_topic_subtree`, `due_count_for_subtree`) are
+FENCED — their consumers (`/api/v1/anki/cards?topic_id=...`, the
+dashboard topics/mastery surfaces) are route-disabled per T17/T18.
+Restoration is tied to the node_id subtree-set port (post-P0.5,
+candidate for P3 or T34 SPA reassessment).
+
+The outline-free helpers (`list_review_queue`, `list_cards_for_qid`,
+`get_tag_parse_stats`, `get_tag_card_coverage`, `get_anki_card_total`)
+remain real — they work unchanged on the canonical `anki_note_tags`
+and back the still-mounted anki dashboard / API routes.
+
+This file is partially FENCED, not a stub: behavior is deliberate, not
+in-progress.
 """
 
 from __future__ import annotations
@@ -32,23 +41,29 @@ def _clamp_limit(limit: int) -> int:
 
 
 # --------------------------------------------------------------------------- #
-# Subtree-scope helpers — stubbed until T14 reimplements on node_id.
+# Subtree-scope helpers — FENCED (T18, V-RB2, V-O5).
 # --------------------------------------------------------------------------- #
+
+
+_FENCED_MSG = (
+    "anki.queries subtree-scope helpers are FENCED (T18, V-RB2) — "
+    "consumer routes unmounted; restoration pending node_id subtree port"
+)
 
 
 async def list_cards_for_topic(
     session: AsyncSession, *, topic_id: int, limit: int = 50
 ) -> list[AnkiCard]:
-    """TODO(T14): port to `node_id` subtree-set rollup (V-O1)."""
-    logger.warning("list_cards_for_topic stub: returns empty pending T14 node_id port")
+    """FENCED — returns empty list. See module docstring."""
+    logger.warning(_FENCED_MSG)
     return []
 
 
 async def list_cards_for_cc(
     session: AsyncSession, *, cc_code: str, limit: int = 20
 ) -> list[AnkiCard]:
-    """TODO(T14): cc_code is gone — port to `node_id` subtree."""
-    logger.warning("list_cards_for_cc stub: cc_code retired; pending T14 node_id port")
+    """FENCED — returns empty list. See module docstring."""
+    logger.warning(_FENCED_MSG)
     return []
 
 
@@ -59,8 +74,8 @@ async def list_review_queue_for_cc(
     due_before: datetime,
     limit: int = 20,
 ) -> list[AnkiCard]:
-    """TODO(T14): port to `node_id` subtree."""
-    logger.warning("list_review_queue_for_cc stub: pending T14 node_id port")
+    """FENCED — returns empty list. See module docstring."""
+    logger.warning(_FENCED_MSG)
     return []
 
 
@@ -71,8 +86,8 @@ async def list_review_queue_for_topic_subtree(
     due_before: datetime,
     limit: int = 20,
 ) -> list[AnkiCard]:
-    """TODO(T14): port to node_id subtree (recursive CTE on outline_nodes)."""
-    logger.warning("list_review_queue_for_topic_subtree stub: pending T14 node_id port")
+    """FENCED — returns empty list. See module docstring."""
+    logger.warning(_FENCED_MSG)
     return []
 
 
@@ -82,8 +97,8 @@ async def due_count_for_subtree(
     topic_id: int,
     due_before: datetime,
 ) -> int:
-    """TODO(T14): port to node_id subtree."""
-    logger.warning("due_count_for_subtree stub: pending T14 node_id port")
+    """FENCED — returns 0. See module docstring."""
+    logger.warning(_FENCED_MSG)
     return 0
 
 

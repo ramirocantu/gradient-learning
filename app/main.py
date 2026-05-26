@@ -21,6 +21,7 @@ from app.api.v1.anki_review import router as anki_review_router
 from app.api.v1.attempts import router as attempts_router
 from app.api.v1.captures import router as captures_router
 from app.api.v1.outline import router as outline_router
+from app.api.v1.pkm import router as pkm_router
 # from app.api.v1.recommendations import router as recommendations_router
 from app.api.v1.tutor import router as tutor_router
 from app.config import settings
@@ -64,6 +65,7 @@ v1.include_router(admin_router)
 v1.include_router(attempts_router)
 # v1.include_router(recommendations_router)
 v1.include_router(tutor_router)
+v1.include_router(pkm_router)
 v1.include_router(anki_router)
 v1.include_router(anki_assign_router)
 v1.include_router(anki_review_router)

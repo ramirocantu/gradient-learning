@@ -8,6 +8,7 @@ from app.models.anki import (
     AnkiWrite,
 )
 from app.models.atomic_fact import AtomicFact
+from app.models.atomic_fact_tag import AtomicFactTag
 from app.models.attempt_note import AttemptNote
 from app.models.captures import (
     Attempt,
@@ -36,6 +37,7 @@ __all__ = [
     "AnkiReview",
     "AnkiWrite",
     "AtomicFact",
+    "AtomicFactTag",
     "Attempt",
     "AttemptNote",
     "ConceptEdge",

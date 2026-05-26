@@ -54,3 +54,6 @@ class AtomicFact(Base):
     pdf_source: Mapped["PdfSource"] = relationship(  # noqa: F821
         back_populates="atomic_facts"
     )
+    tags: Mapped[list["AtomicFactTag"]] = relationship(  # noqa: F821
+        back_populates="atomic_fact", cascade="all, delete-orphan"
+    )

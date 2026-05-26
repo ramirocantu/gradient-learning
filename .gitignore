@@ -52,9 +52,10 @@ postgres-data/
 *.bak
 data/
 .venv
-.claude/
+.claude/*
 .junie/
-
+!.claude/settings.json
+!.claude/hooks/
 # Local editor / tooling caches
 .codegraph/
 .ipynb_checkpoints/

@@ -1,0 +1,10 @@
+# Local-only files copied into each new worktree by .claude/hooks/worktree-create.sh.
+# Uses gitignore syntax — patterns must match files that are currently gitignored,
+# or git ls-files --others --ignored won't return them.
+
+# Env / secrets
+.env
+.env.local
+
+# Backend on-disk state (SQLite caches, media blobs)
+data/

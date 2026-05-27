@@ -1,3 +1,6 @@
 [submodule "docs/wiki"]
 	path = docs/wiki
 	url = https://github.com/ramirocantu/gradient-server.wiki.git
+[submodule "desktop"]
+	path = desktop
+	url = https://github.com/ramirocantu/gradient-desktop.git

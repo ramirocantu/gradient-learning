@@ -46,7 +46,7 @@ from app.services.anki.client import (
     AnkiUnreachableError,
 )
 from app.services.anki.tag_parser import parse_tag
-from app.services.categorizer.outline_lookup import OutlineLookup
+from app.services.categorizer.outline_lookup import OutlineLookup, OutlineNotSeededError
 
 
 logger = logging.getLogger(__name__)
@@ -126,7 +126,14 @@ async def sync_deck(
     tags_by_note: dict[int, list[str]] = {n["noteId"]: list(n.get("tags") or []) for n in notes}
 
     if outline_lookup is None:
-        outline_lookup = await OutlineLookup.load(session)
+        # Soft on an unseeded AAMC outline (V4 spirit): sync still mirrors
+        # cards; CC tags resolve to no node and persist as 'unparsed' rather
+        # than 500-ing the /anki/sync route (B4 / T41).
+        try:
+            outline_lookup = await OutlineLookup.load(session)
+        except OutlineNotSeededError:
+            logger.warning("anki sync: AAMC outline unseeded — CC tags will be 'unparsed'")
+            outline_lookup = None
 
     now = datetime.now(timezone.utc)
 
@@ -155,8 +162,8 @@ async def sync_deck(
         )
     await session.flush()
 
-    # Replace the regex tag set per NOTE (§V75: one set per note, ⊥ per-card
-    # fan-out; §V43: source!='regex' rows untouched). linked_qids counts
+    # Replace the schema_map tag set per NOTE (§V75: one set per note, ⊥ per-card
+    # fan-out; §V43: source!='schema_map' rows untouched). linked_qids counts
     # uworld_qid rows per note (deduped), not per card.
     linked_qid_count = 0
     for nid, tag_strings in tags_by_note.items():
@@ -376,29 +383,30 @@ async def _replace_tags(
     *,
     note_id: int,
     tag_strings: list[str],
-    outline_lookup: OutlineLookup,
+    outline_lookup: Optional[OutlineLookup],
 ) -> int:
-    """Diff a NOTE's regex tag set vs incoming, applying deletes + inserts (§V75).
+    """Diff a NOTE's schema-derived tag set vs incoming, applying deletes +
+    inserts (§V75).
 
     Note-scoped per §V75: one tag set per note (`anki_note_tags`), not the
-    pre-T93 per-card fan-out. Per §V43 sync still only owns rows it itself
-    wrote (`source='regex'`); LLM-resolver (`source='llm'`) + future
-    manual-override (`source='manual'`) rows are scoped out of both the
-    deletion sweep AND the dedupe-by-raw insert guard. Their synthetic
-    `tag_raw` values (e.g. `__llm_topic__::v5-…::<topic_path>`) never appear
-    in real AnkiConnect tag lists, so without the source filter the diff loop
-    would wipe every LLM-resolved topic row on every sync (B9).
+    pre-T93 per-card fan-out. Sync writes the canonical `source='schema_map'`
+    (V-T2: regex/schema/import-derived); per §V43 it only owns rows it itself
+    wrote — LLM-resolver (`source='llm'`) + manual-override (`source='manual'`)
+    rows are scoped out of both the deletion sweep AND the dedupe-by-raw insert
+    guard. Their synthetic `tag_raw` values (e.g. `__llm_topic__::v5-…::<path>`)
+    never appear in real AnkiConnect tag lists, so without the source filter the
+    diff loop would wipe every LLM-resolved row on every sync (B9).
 
-    Returns the number of `parsed_kind='uworld_qid'` rows (regex-sourced) on
-    this note — `SyncSummary.linked_qids` sums it across notes (deduped, not
-    multiplied by the note's card count as the pre-T93 per-card path did).
+    `outline_lookup` may be None (unseeded outline) — CC tags then persist as
+    `'unparsed'`. Returns the number of `parsed_kind='uworld_qid'` rows on this
+    note — `SyncSummary.linked_qids` sums it across notes (deduped).
     """
     existing_rows = (
         (
             await session.execute(
                 select(AnkiNoteTag).where(
                     AnkiNoteTag.note_id == note_id,
-                    AnkiNoteTag.source == "regex",
+                    AnkiNoteTag.source == "schema_map",
                 )
             )
         )
@@ -424,9 +432,7 @@ async def _replace_tags(
                 reparsed = parse_tag(raw, outline_lookup=outline_lookup)
                 if reparsed.parsed_kind != "unparsed":
                     existing_row.parsed_kind = reparsed.parsed_kind
-                    existing_row.topic_id = reparsed.topic_id
-                    existing_row.content_category_id = reparsed.content_category_id
-                    existing_row.skill_number = reparsed.skill_number
+                    existing_row.node_id = reparsed.node_id
                     existing_row.question_qid = reparsed.question_qid
             if existing_row.parsed_kind == "uworld_qid":
                 qid_count += 1
@@ -436,12 +442,10 @@ async def _replace_tags(
             AnkiNoteTag(
                 note_id=note_id,
                 tag_raw=parsed.tag_raw,
-                topic_id=parsed.topic_id,
-                content_category_id=parsed.content_category_id,
-                skill_number=parsed.skill_number,
+                node_id=parsed.node_id,
                 question_qid=parsed.question_qid,
                 parsed_kind=parsed.parsed_kind,
-                source="regex",
+                source="schema_map",
             )
         )
         if parsed.parsed_kind == "uworld_qid":

@@ -261,14 +261,16 @@ async def test_sync_unparsed_tag_persists(
         )
     ).scalar_one()
     assert tag.parsed_kind == "unparsed"
-    assert tag.topic_id is None
+    assert tag.node_id is None
     assert tag.question_qid is None
 
 
-async def test_sync_aamc_skill_resolved_tag_writes_skill_number(
+async def test_sync_aamc_skill_tag_recognized_but_maps_to_no_node(
     db_session: AsyncSession, lookup: OutlineLookup, make_client
 ) -> None:
-    """§V3 amended (T34): AnKing Skill tags persist with skill_number set."""
+    """T41 (V-T1): AnKing Skill tags are recognized (`parsed_kind='aamc_skill'`)
+    but map to NO outline node — the AAMC outline is Section>>FC>>CC, skills
+    aren't nodes — so `node_id` stays None."""
     skill_tag = "#AK_MCAT_v2::#AAMC::Skills::Skill_4-Data_and_Statistics"
     handler = _make_handler(
         card_ids=[1051],
@@ -281,15 +283,14 @@ async def test_sync_aamc_skill_resolved_tag_writes_skill_number(
         await db_session.execute(select(AnkiNoteTag).where(AnkiNoteTag.tag_raw == skill_tag))
     ).scalar_one()
     assert tag.parsed_kind == "aamc_skill"
-    assert tag.skill_number == 4
-    assert tag.content_category_id is None
-    assert tag.topic_id is None
+    assert tag.node_id is None
 
 
-async def test_sync_aamc_cc_resolved_tag_links_cc(
+async def test_sync_aamc_cc_resolved_tag_links_node(
     db_session: AsyncSession, lookup: OutlineLookup, make_client
 ) -> None:
-    """§V3 amended (T31): AnKing AAMC tags resolve at CC granularity."""
+    """T41 (V-T1, V-O5): AnKing AAMC CC tags resolve to the outline `node_id`
+    via the reconstructed `<SECTION> >> FC<NN> >> <CC>` path (V-O4)."""
     aamc_tag = (
         "#AK_MCAT_v2::#AAMC::Concepts::C/P::Foundational_Concept_04::"
         "4E-Atoms_Nuclear_Decay_Electronic_Structure_and_Behavior"
@@ -305,8 +306,10 @@ async def test_sync_aamc_cc_resolved_tag_links_cc(
         await db_session.execute(select(AnkiNoteTag).where(AnkiNoteTag.tag_raw == aamc_tag))
     ).scalar_one()
     assert tag.parsed_kind == "aamc_cc"
-    assert tag.content_category_id is not None
-    assert tag.topic_id is None
+    assert tag.node_id is not None
+    # The resolved node is exactly the CP >> FC4 >> 4E content-category node.
+    assert tag.node_id == lookup.node_id_by_path("CP >> FC4 >> 4E")
+    assert tag.source == "schema_map"
 
 
 # --- V4: AnkiConnect unreachable ---

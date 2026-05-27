@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_session
+from app.api.deps import get_session, verify_coach_token
 from app.models.outline import Course, OutlineNode
 from app.services.analytics import (
     CourseNotFoundError as MasteryCourseNotFound,
@@ -183,7 +183,7 @@ async def read_outline(
 # T44 (V-O1, V-O5, V-D1, V-RB1): per-node/subtree + course mastery, ported off
 # the FENCED AAMC analytics onto OutlineNode + outline_subtree set-rollup and
 # re-exposed on the public API (⊥ a private/dashboard-only route).
-@router.get("/outline/nodes/{node_id}/mastery")
+@router.get("/outline/nodes/{node_id}/mastery", dependencies=[Depends(verify_coach_token)])
 async def node_mastery(
     node_id: int,
     session: AsyncSession = Depends(get_session),
@@ -194,7 +194,7 @@ async def node_mastery(
         raise HTTPException(status_code=404, detail=f"node id={node_id} not found")
 
 
-@router.get("/outline/courses/{course_id}/mastery")
+@router.get("/outline/courses/{course_id}/mastery", dependencies=[Depends(verify_coach_token)])
 async def course_mastery(
     course_id: int,
     session: AsyncSession = Depends(get_session),

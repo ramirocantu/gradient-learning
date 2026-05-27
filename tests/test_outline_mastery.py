@@ -14,9 +14,12 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.captures import Attempt, Question, QuestionTag
 from app.models.outline import Course, OutlineNode
 from app.services import analytics
+
+_AUTH = {"X-Coach-Token": settings.COACH_TOKEN}
 
 
 async def _seed(db: AsyncSession) -> dict[str, int]:
@@ -169,7 +172,7 @@ async def test_course_not_found_raises(db_session: AsyncSession) -> None:
 @pytest.mark.asyncio
 async def test_route_node_mastery(client: AsyncClient, db_session: AsyncSession) -> None:
     ids = await _seed(db_session)
-    r = await client.get(f"/api/v1/outline/nodes/{ids['Proteins']}/mastery")
+    r = await client.get(f"/api/v1/outline/nodes/{ids['Proteins']}/mastery", headers=_AUTH)
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["node"]["name"] == "Proteins"
@@ -180,7 +183,7 @@ async def test_route_node_mastery(client: AsyncClient, db_session: AsyncSession)
 @pytest.mark.asyncio
 async def test_route_course_mastery(client: AsyncClient, db_session: AsyncSession) -> None:
     ids = await _seed(db_session)
-    r = await client.get(f"/api/v1/outline/courses/{ids['_course_id']}/mastery")
+    r = await client.get(f"/api/v1/outline/courses/{ids['_course_id']}/mastery", headers=_AUTH)
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["total"]["attempts"] == 5
@@ -189,5 +192,13 @@ async def test_route_course_mastery(client: AsyncClient, db_session: AsyncSessio
 
 @pytest.mark.asyncio
 async def test_route_node_mastery_404(client: AsyncClient) -> None:
-    r = await client.get("/api/v1/outline/nodes/999999/mastery")
+    r = await client.get("/api/v1/outline/nodes/999999/mastery", headers=_AUTH)
     assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_route_mastery_requires_coach_token(client: AsyncClient) -> None:
+    r = await client.get("/api/v1/outline/nodes/1/mastery")
+    assert r.status_code in (401, 403)
+    r = await client.get("/api/v1/outline/courses/1/mastery")
+    assert r.status_code in (401, 403)

@@ -94,6 +94,7 @@ node's full `>>`-joined path (cross-course safe; unknown ids dropped):
 ### Admin — `app/api/v1/admin.py`
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
+| GET | `/api/v1/admin/status` | 🔑 | System health: Anki / OpenAI / Notion reachability + per-job last-run outcome folded into next-run times. |
 | GET | `/api/v1/admin/jobs` | 🔑 | Scheduler jobs + next-run times. |
 | POST | `/api/v1/admin/jobs/{job_name}/trigger` | 🔑 | Run a job immediately (canonical job set = `_VALID_JOBS`). |
 | POST | `/api/v1/admin/questions/{question_id}/recategorize` | 🏠 | Re-run the categorizer on a question. |
@@ -105,6 +106,42 @@ node's full `>>`-joined path (cross-course safe; unknown ids dropped):
 |---|---|---|---|
 | GET | `/healthz` | 🌐 | Liveness (`{"status":"ok"}`). |
 | GET | `/media/{file_path}` | 🌐 | Serve a hash-addressed asset (PDF/image) under `MEDIA_ROOT`. Path-traversal guarded. |
+
+### `GET /api/v1/admin/status` payload (T39)
+
+Lets a client settings panel show *real* connection health instead of
+inferring "scheduled"/"unknown" from `/admin/jobs`. Each external dependency
+is probed with one cheap call; every probe is total (any failure → `reachable:
+false` with the error text in `detail`, never a 5xx).
+
+```jsonc
+{
+  "anki":   { "configured": true,  "reachable": true,  "detail": "AnkiConnect v6" },
+  "openai": { "configured": true,  "reachable": true,  "detail": null },
+  "notion": { "configured": false, "reachable": false, "detail": "NOTION_API_TOKEN unset" },
+  "jobs": [
+    { "job_id": "run_anki_sync", "next_run_time": "2026-05-27T12:00:00+00:00",
+      "last_run": { "status": "succeeded", "started_at": "…", "finished_at": "…",
+                    "items_processed": 4, "error_text": null } },
+    { "job_id": "run_categorizer", "next_run_time": null, "last_run": null }
+  ]
+}
+```
+
+- `configured` — required env var present (`OPENAI_API_KEY` / `NOTION_API_TOKEN`;
+  Anki always configured via `ANKICONNECT_URL` default). `false` ⇒ no probe attempted.
+- `reachable` — the probe call succeeded. Probes: Anki `version()` (V13 read-only),
+  OpenAI `models.retrieve(OPENAI_MODEL)`, Notion `users.me()` (token-validity only —
+  bot identity, ⊥ wiki content / persistence, honoring **V-N1**).
+- `jobs` — one row per scheduler job, `next_run_time` from the scheduler merged with the
+  latest `task_runs` row for that `job_name` (`last_run`, `null` if never run).
+
+Probe internals live in `app/services/system_status.py`
+(`probe_anki` / `probe_openai` / `probe_notion`, `job_last_runs`,
+`build_jobs_health`, `collect_system_status`). Clients are injected at the
+admin-route deps (`_anki_status_client` / `_openai_status_client` /
+`_notion_status_client`) so tests mock the SDK boundary (**V16**); the OpenAI
+probe client uses `max_retries=0` (fail-fast snapshot, not V41's extractor ≥5).
 
 ---
 
@@ -149,6 +186,7 @@ route) should reuse rather than reimplement:
 | LLM result cache | `app/services/llm/cache.py`, `app/services/categorizer/cache.py` | content-hash SQLite cache |
 | Anki sync / queries / assignments / reviews | `app/services/anki/*` | AnkiConnect client + sync/assignment/review services |
 | Manual tag overrides | `app/services/admin_tags.py` | `create_manual_tag(...)` |
+| System health probes (T39) | `app/services/system_status.py` | `collect_system_status(session, *, anki_client, openai_client, notion_client, job_snapshots, openai_model, openai_configured, notion_configured)` |
 | Media storage | `app/services/media_store.py` | hash-keyed asset store (served by `/media/*`) |
 | Tutor reads (MCP seam backing) | `app/services/tutor/*` | questions, captures, sessions, flags, outline, health, discriminators |
 

@@ -9,6 +9,7 @@ No auth — localhost-only service per CLAUDE.md.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from typing import Any
 
@@ -19,8 +20,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_session, verify_coach_token
-from app.config import settings  # noqa: F401 — kept for future cache-path settings access
+from app.config import settings
+from app.services.anki.client import AnkiConnectClient
 from app.services.llm.client import build_openai_client
+from app.services.system_status import collect_system_status
 from app.services.admin_tags import (
     ManualTagConflictError,
     ManualTagValidationError,
@@ -54,6 +57,44 @@ def _categorizer_cache() -> CategorizerCache:
     WAL mode (set by CategorizerCache) keeps reads/writes non-blocking.
     """
     return CategorizerCache(settings.CATEGORIZER_CACHE_PATH)
+
+
+# --------------------------------------------------------------------------- #
+# Status-probe clients (T39). Separate deps so tests override each at the SDK
+# boundary (V16). All three are mocked in tests/test_admin_status.py.
+# --------------------------------------------------------------------------- #
+
+
+async def _anki_status_client() -> AsyncIterator[AnkiConnectClient]:
+    """Per-request AnkiConnect client for the health probe; closed on teardown."""
+    client = AnkiConnectClient(settings.ANKICONNECT_URL)
+    try:
+        yield client
+    finally:
+        await client.aclose()
+
+
+def _openai_status_client() -> AsyncOpenAI:
+    """OpenAI client for the health probe. ``max_retries=0`` (not V41's ≥5,
+    which is extractor-scoped): a status read must fail fast, not block for
+    seconds retrying a down endpoint."""
+    return build_openai_client(max_retries=0)
+
+
+async def _notion_status_client() -> AsyncIterator[Any]:
+    """Notion ``AsyncClient`` for the token-validity probe, or None when
+    ``NOTION_API_TOKEN`` is unset (probe reports unconfigured, no call).
+    Import is lazy so a missing token never imports notion-client."""
+    if not settings.NOTION_API_TOKEN:
+        yield None
+        return
+    from notion_client import AsyncClient
+
+    client = AsyncClient(auth=settings.NOTION_API_TOKEN)
+    try:
+        yield client
+    finally:
+        await client.aclose()
 
 
 # --------------------------------------------------------------------------- #
@@ -240,6 +281,34 @@ async def list_jobs() -> list[dict]:
 )
 async def trigger_job(job_name: str) -> dict:
     return await trigger_job_logic(job_name)
+
+
+# --------------------------------------------------------------------------- #
+# GET /status  (T39)
+#
+# Real connection health for a client settings panel: probe AnkiConnect,
+# OpenAI, and Notion reachability + fold each scheduler job's last TaskRun
+# outcome into the next-run snapshot. Read-only public-seam JSON (V-D1).
+# --------------------------------------------------------------------------- #
+
+
+@router.get("/status", dependencies=[Depends(verify_coach_token)])
+async def system_status(
+    session: AsyncSession = Depends(get_session),
+    anki_client: AnkiConnectClient = Depends(_anki_status_client),
+    openai_client: AsyncOpenAI = Depends(_openai_status_client),
+    notion_client: Any = Depends(_notion_status_client),
+) -> dict[str, Any]:
+    return await collect_system_status(
+        session,
+        anki_client=anki_client,
+        openai_client=openai_client,
+        notion_client=notion_client,
+        job_snapshots=await list_jobs_payload(),
+        openai_model=settings.OPENAI_MODEL,
+        openai_configured=bool(settings.OPENAI_API_KEY),
+        notion_configured=bool(settings.NOTION_API_TOKEN),
+    )
 
 
 @router.delete("/tags/{tag_id}", status_code=status.HTTP_204_NO_CONTENT)

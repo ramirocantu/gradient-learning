@@ -442,6 +442,57 @@
         }
       }
     },
+    "/api/v1/admin/status": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "System Status",
+        "operationId": "system_status_api_v1_admin_status_get",
+        "parameters": [
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response System Status Api V1 Admin Status Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/admin/tags/{tag_id}": {
       "delete": {
         "tags": [

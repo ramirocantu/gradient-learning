@@ -41,6 +41,19 @@ def _course_payload(c: Course) -> dict[str, Any]:
     }
 
 
+@router.get("/courses")
+async def list_courses(
+    session: AsyncSession = Depends(get_session),
+) -> list[dict[str, Any]]:
+    """List all courses (slug-ordered). The SPA course picker needs to
+    enumerate courses; per V-D1 that read extends the public API rather
+    than a dashboard-private route."""
+    rows = (
+        await session.execute(select(Course).order_by(Course.slug))
+    ).scalars().all()
+    return [_course_payload(c) for c in rows]
+
+
 @router.post("/courses", status_code=status.HTTP_201_CREATED)
 async def create_course(
     body: CreateCourseBody,

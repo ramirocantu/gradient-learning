@@ -69,7 +69,7 @@ def _payload(**over) -> CapturePayload:
             selected_choice="A",
             is_correct=True,
         ),
-        extension_version="0.1.0",
+        extension_version=over.get("extension_version", "0.1.0"),
     )
 
 
@@ -84,6 +84,20 @@ def test_registry_has_uworld_reference_adapter():
 def test_get_adapter_unknown_source_raises():
     with pytest.raises(UnknownSourceError):
         get_adapter("nope")
+
+
+def test_registry_has_manual_and_web_qbank_adapters():
+    # T33 (§A): manual + web-Qbank register without touching the dispatcher.
+    sources = registered_sources()
+    assert "manual" in sources
+    assert "web-qbank" in sources
+    assert get_adapter("manual").source == "manual"
+    assert get_adapter("web-qbank").source == "web-qbank"
+
+
+def test_pdf_qset_deferred_not_registered():
+    # T33 deferred the PDF question-set parser ("hardest, last").
+    assert "pdf-qset" not in registered_sources()
 
 
 # ── dispatch + source stamping (DB) ─────────────────────────────────────────
@@ -106,6 +120,44 @@ async def test_ingest_routes_uworld_and_stamps_source(engine):
     assert q.source == "uworld"
     assert a.source == "uworld"
     assert rc.source == "uworld"
+
+
+async def test_ingest_routes_web_qbank_and_stamps_source(engine):
+    # §A: a new source dispatches through the same seam, stamping its source.
+    async with AsyncSession(engine) as s:
+        resp = await ingest_capture(_payload(source="web-qbank", qid="q-wq-1"), s)
+        await s.commit()
+    async with AsyncSession(engine) as s:
+        q = (
+            await s.execute(select(Question).where(Question.id == resp.question_id))
+        ).scalar_one()
+        a = (
+            await s.execute(select(Attempt).where(Attempt.id == resp.attempt_id))
+        ).scalar_one()
+        rc = (
+            await s.execute(select(RawCapture).where(RawCapture.id == resp.capture_id))
+        ).scalar_one()
+    assert q.source == "web-qbank"
+    assert a.source == "web-qbank"
+    assert rc.source == "web-qbank"
+
+
+async def test_ingest_routes_manual_and_stamps_source(engine):
+    # Manual entry: extension_version='manual', same normalized shape.
+    async with AsyncSession(engine) as s:
+        resp = await ingest_capture(
+            _payload(source="manual", qid="q-man-1", extension_version="manual"), s
+        )
+        await s.commit()
+    async with AsyncSession(engine) as s:
+        q = (
+            await s.execute(select(Question).where(Question.id == resp.question_id))
+        ).scalar_one()
+        a = (
+            await s.execute(select(Attempt).where(Attempt.id == resp.attempt_id))
+        ).scalar_one()
+    assert q.source == "manual"
+    assert a.source == "manual"
 
 
 async def test_ingest_unknown_source_raises_before_writes(engine):

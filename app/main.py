@@ -9,10 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.v1.admin import router as admin_router
-# FENCED (T17, V-RB1, V-O5): analytics/analyzer/recommendations routers consume
-# FENCED services (app/services/{analytics,recommender,analyzer}). Restoration
-# is tied to the post-P0.5 node_id rollup port + T34 SPA reassessment.
-# from app.api.v1.analytics import router as analytics_router
+# FENCED (T17, V-RB1, V-O5): analyzer/recommendations routers consume FENCED
+# services (app/services/{recommender,analyzer}). Restoration is tied to the
+# post-P0.5 node_id rollup port. (analytics ported + re-exposed under
+# /api/v1/outline/.../mastery in T44 — no longer fenced.)
 # from app.api.v1.analyzer import router as analyzer_router
 from app.api.v1.anki import router as anki_router
 from app.api.v1.anki_assign import router as anki_assign_router
@@ -57,8 +57,7 @@ v1 = APIRouter(prefix="/api/v1")
 v1.include_router(captures_router)
 v1.include_router(outline_router)
 v1.include_router(admin_router)
-# FENCED (T17, V-RB1): analytics/analyzer/recommendations include disabled.
-# v1.include_router(analytics_router)
+# FENCED (T17, V-RB1): analyzer/recommendations include disabled.
 # v1.include_router(analyzer_router)
 v1.include_router(attempts_router)
 # v1.include_router(recommendations_router)

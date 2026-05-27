@@ -23,7 +23,6 @@ import app.main as main_mod
 import app.scheduler as scheduler_mod
 import app.api.v1.tutor as tutor_api_mod
 
-import app.services.analytics as analytics_mod
 import app.services.recommender as recommender_mod
 import app.services.tutor.outline as tutor_outline_mod
 import app.services.analyzer as analyzer_mod
@@ -53,8 +52,10 @@ _STUB_PATTERNS = [
 ]
 
 
+# NOTE: analytics_mod left this list in T44 — its mastery rollup was ported
+# onto OutlineNode + outline_subtree and re-exposed under
+# /api/v1/outline/.../mastery (no longer fenced).
 _FENCED_MODULES = [
-    analytics_mod,
     recommender_mod,
     tutor_outline_mod,
     analyzer_mod,
@@ -110,8 +111,10 @@ def test_module_declares_fence(module):
 
 
 def test_api_routers_for_fenced_surfaces_unmounted():
-    """V-RB1 route-disabled clause — analytics/analyzer/recommendations
-    routers are not mounted under `/api/v1/*`."""
+    """V-RB1 route-disabled clause — analyzer/recommendations routers are not
+    mounted under `/api/v1/*`. (analytics was ported in T44 and re-exposed
+    under `/api/v1/outline/.../mastery`; the old `/api/v1/analytics` route is
+    deleted, so it stays absent here too.)"""
     paths = {route.path for route in main_mod.app.routes}
     # Sub-routers contribute to `app.routes` flattened; check known paths.
     forbidden_prefixes = (

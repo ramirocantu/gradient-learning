@@ -16,6 +16,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_session
 from app.models.outline import Course, OutlineNode
+from app.services.analytics import (
+    CourseNotFoundError as MasteryCourseNotFound,
+    NodeNotFoundError as MasteryNodeNotFound,
+    compute_course_mastery,
+    compute_node_mastery,
+)
 from app.services.outline import (
     OutlineImportError,
     OutlineSchemaValidationError,
@@ -172,3 +178,28 @@ async def read_outline(
         "course": _course_payload(course),
         "nodes": [_node_payload(n) for n in rows],
     }
+
+
+# T44 (V-O1, V-O5, V-D1, V-RB1): per-node/subtree + course mastery, ported off
+# the FENCED AAMC analytics onto OutlineNode + outline_subtree set-rollup and
+# re-exposed on the public API (⊥ a private/dashboard-only route).
+@router.get("/outline/nodes/{node_id}/mastery")
+async def node_mastery(
+    node_id: int,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        return await compute_node_mastery(session, node_id=node_id)
+    except MasteryNodeNotFound:
+        raise HTTPException(status_code=404, detail=f"node id={node_id} not found")
+
+
+@router.get("/outline/courses/{course_id}/mastery")
+async def course_mastery(
+    course_id: int,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        return await compute_course_mastery(session, course_id=course_id)
+    except MasteryCourseNotFound:
+        raise HTTPException(status_code=404, detail=f"course id={course_id} not found")

@@ -69,18 +69,46 @@
         "summary": "List Courses",
         "description": "List all courses (slug-ordered). The SPA course picker needs to\nenumerate courses; per V-D1 that read extends the public API rather\nthan a dashboard-private route.",
         "operationId": "list_courses_api_v1_courses_get",
+        "parameters": [
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "additionalProperties": true,
-                    "type": "object"
-                  },
                   "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
                   "title": "Response List Courses Api V1 Courses Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -93,15 +121,33 @@
         ],
         "summary": "Create Course",
         "operationId": "create_course_api_v1_courses_post",
+        "parameters": [
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/CreateCourseBody"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "201": {
@@ -109,8 +155,8 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
                   "type": "object",
+                  "additionalProperties": true,
                   "title": "Response Create Course Api V1 Courses Post"
                 }
               }
@@ -145,6 +191,22 @@
             "schema": {
               "type": "integer",
               "title": "Course Id"
+            }
+          },
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
             }
           }
         ],
@@ -202,6 +264,22 @@
               "type": "integer",
               "title": "Course Id"
             }
+          },
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
           }
         ],
         "responses": {
@@ -213,6 +291,126 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Read Outline Api V1 Courses  Course Id  Outline Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/outline/nodes/{node_id}/mastery": {
+      "get": {
+        "tags": [
+          "outline"
+        ],
+        "summary": "Node Mastery",
+        "operationId": "node_mastery_api_v1_outline_nodes__node_id__mastery_get",
+        "parameters": [
+          {
+            "name": "node_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Node Id"
+            }
+          },
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Node Mastery Api V1 Outline Nodes  Node Id  Mastery Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/outline/courses/{course_id}/mastery": {
+      "get": {
+        "tags": [
+          "outline"
+        ],
+        "summary": "Course Mastery",
+        "operationId": "course_mastery_api_v1_outline_courses__course_id__mastery_get",
+        "parameters": [
+          {
+            "name": "course_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Course Id"
+            }
+          },
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Course Mastery Api V1 Outline Courses  Course Id  Mastery Get"
                 }
               }
             }
@@ -1554,7 +1752,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/AnkiCardOut"
+                    "$ref": "#/components/schemas/AnkiReviewQueueCardOut"
                   },
                   "title": "Response Get Review Queue Api V1 Anki Review Queue Get"
                 }
@@ -2595,6 +2793,13 @@
           "status_label": {
             "type": "string",
             "title": "Status Label"
+          },
+          "reviewed_series": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewedDayOut"
+            },
+            "type": "array",
+            "title": "Reviewed Series"
           }
         },
         "type": "object",
@@ -2606,10 +2811,11 @@
           "daily_minutes_budget",
           "headroom_card_review_pct",
           "headroom_minutes_pct",
-          "status_label"
+          "status_label",
+          "reviewed_series"
         ],
         "title": "AnkiLoadAdherenceOut",
-        "description": "V54 deterministic adherence shape. \u22a5 a `recommended_changes`\nfield per V60 \u2014 advisory lives in the MCP host chat."
+        "description": "V54 deterministic adherence shape. \u22a5 a `recommended_changes`\nfield per V60 \u2014 advisory lives in the MCP host chat. `reviewed_series`\n(T43) is the actual per-day reviewed count over `window_days` \u2014 data,\nnot advisory."
       },
       "AnkiLoadConfigIn": {
         "properties": {
@@ -2761,6 +2967,156 @@
           "pushed_at"
         ],
         "title": "AnkiReviewOut"
+      },
+      "AnkiReviewQueueCardOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "anki_card_id": {
+            "type": "integer",
+            "title": "Anki Card Id"
+          },
+          "deck_name": {
+            "type": "string",
+            "title": "Deck Name"
+          },
+          "note_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note Id"
+          },
+          "model_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Name"
+          },
+          "fields_json": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fields Json"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "interval_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interval Days"
+          },
+          "ease": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ease"
+          },
+          "lapses": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lapses"
+          },
+          "queue": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queue"
+          },
+          "sync_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Sync At"
+          },
+          "tags": {
+            "items": {
+              "$ref": "#/components/schemas/AnkiCardTagOut"
+            },
+            "type": "array",
+            "title": "Tags",
+            "default": []
+          },
+          "retention": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retention"
+          },
+          "retrievability": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrievability"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "anki_card_id",
+          "deck_name",
+          "sync_at"
+        ],
+        "title": "AnkiReviewQueueCardOut",
+        "description": "Review-queue card (\u00a7T42 base shape) + per-card review metrics (T43).\n\n`retention` = lifetime true-retention (pass/total over non-learn reviews);\n`retrievability` = forgetting-curve recall estimate. Both None when the\ncard has no qualifying reviews / no scheduled interval. Data-only (V13)."
       },
       "CapturePayload": {
         "properties": {
@@ -3345,6 +3701,26 @@
           "plain"
         ],
         "title": "PassageCapture"
+      },
+      "ReviewedDayOut": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "title": "Date"
+          },
+          "reviewed": {
+            "type": "integer",
+            "title": "Reviewed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "reviewed"
+        ],
+        "title": "ReviewedDayOut",
+        "description": "One point of the T43 reviewed-count series."
       },
       "ValidationError": {
         "properties": {

@@ -13,9 +13,10 @@ contract (regenerate with the snippet at the bottom) for client codegen.
 - **Stack:** Python 3.12+, FastAPI, SQLAlchemy async, Postgres 16 (asyncpg),
   OpenAI SDK, APScheduler. Entry point: `app/main.py:app`.
 - **Auth:** most routes require the `X-Coach-Token` header (shared secret,
-  `COACH_TOKEN`), enforced by `verify_coach_token` (`app/api/deps.py`).
-  Course/outline reads are open; `/admin/*` mutation routes are localhost-only
-  (no token); `/healthz` + `/media/*` are open.
+  `COACH_TOKEN`), enforced by `verify_coach_token` (`app/api/deps.py`). The
+  whole `/api/v1/courses` + outline router (incl. mastery) is token-gated;
+  `/admin/*` mutation routes are localhost-only (no token); `/healthz` +
+  `/media/*` are open.
 - **CORS:** `chrome-extension://*` and `http(s)://localhost[:port]`
   (`app/main.py`). A native macOS app calling over loopback fits the localhost
   allowance; widen the regex if a client runs from another origin.
@@ -34,15 +35,17 @@ Auth column: 🔑 = `X-Coach-Token` required · 🌐 = open · 🏠 = localhost-
 ### Courses + outline — `app/api/v1/outline.py`
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
-| GET | `/api/v1/courses` | 🌐 | List courses. |
-| POST | `/api/v1/courses` | 🌐 | Create a course. |
-| POST | `/api/v1/courses/{course_id}/outline:import` | 🌐 | Validate-then-materialize an uploaded outline schema (atomic). Re-upload AAMC restores MCAT. |
-| GET | `/api/v1/courses/{course_id}/outline` | 🌐 | Read the outline node tree. |
+| GET | `/api/v1/courses` | 🔑 | List courses. |
+| POST | `/api/v1/courses` | 🔑 | Create a course. |
+| POST | `/api/v1/courses/{course_id}/outline:import` | 🔑 | Validate-then-materialize an uploaded outline schema (atomic). Re-upload AAMC restores MCAT. |
+| GET | `/api/v1/courses/{course_id}/outline` | 🔑 | Read the outline node tree. |
+| GET | `/api/v1/outline/nodes/{node_id}/mastery` | 🔑 | Per-node subtree mastery rollup + per-direct-child breakdown (T44). |
+| GET | `/api/v1/outline/courses/{course_id}/mastery` | 🔑 | Course mastery: total + per-root-node rollup (T44). |
 
 ### Tutor (MCP read seam) — `app/api/v1/tutor.py`
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
-| GET | `/api/v1/tutor/questions/by-qid/{qid}` | 🔑 | Question detail + tags + features. |
+| GET | `/api/v1/tutor/questions/by-qid/{qid}` | 🔑 | Question detail + tags + features + review detail (T42): `answer_distribution`, `picked`, `attempt_history`. |
 | GET | `/api/v1/tutor/questions/by-attempt-id/{attempt_id}` | 🔑 | Same, resolved via an attempt. |
 | GET | `/api/v1/tutor/captures/recent` | 🔑 | Recent captures (default 5, max 50). Each row's `topics[]` = the question's resolved node tags (T38). |
 | GET | `/api/v1/tutor/sessions/latest` | 🔑 | Latest session `test_id`. |
@@ -83,12 +86,12 @@ node's full `>>`-joined path (cross-course safe; unknown ids dropped):
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | POST | `/api/v1/anki/sync` | 🔑 | Trigger one-off AnkiConnect deck sync. |
-| GET | `/api/v1/anki/review-queue` | 🔑 | Due/overdue cards. |
+| GET | `/api/v1/anki/review-queue` | 🔑 | Due/overdue cards + per-card `retention` (lifetime pass-rate) and `retrievability` (forgetting-curve estimate) (T43). |
 | GET | `/api/v1/anki/cards/by-qid/{qid}` | 🔑 | Cards tagged with a qid. |
 | POST/GET | `/api/v1/anki/assignments` | 🔑 | Create / list assignments. |
 | PATCH | `/api/v1/anki/assignments/{assignment_id}` | 🔑 | Mark skipped / completed-manual. |
 | GET/POST | `/api/v1/anki/load-config` | 🔑 | Read / upsert daily load budget. |
-| GET | `/api/v1/anki/load-adherence` | 🔑 | Load-adherence stats (default 30d). |
+| GET | `/api/v1/anki/load-adherence` | 🔑 | Load-adherence stats (default 30d) + `reviewed_series` (dense per-day reviewed count over the window) (T43). |
 | POST/GET | `/api/v1/anki/reviews` | 🔑 | Create / list pending reviews. |
 
 ### Admin — `app/api/v1/admin.py`
@@ -179,6 +182,8 @@ route) should reuse rather than reimplement:
 |---|---|---|
 | Outline import (validate→materialize) | `app/services/outline.py` | schema validate + node materialization (atomic, V-O2) |
 | Subtree rollup (V-O1 set, not sum) | `app/services/outline_subtree.py` | subtree membership for a node |
+| Mastery rollup (node / course) | `app/services/analytics.py` | `compute_node_mastery` / `compute_course_mastery` (V-O1 set rollup over `QuestionTag.node_id`) |
+| Anki review metrics | `app/services/anki/review_metrics.py` | `retention_by_card` + `retrievability` (read-only, V13) |
 | Node lookup by path/slug | `app/services/categorizer/outline_lookup.py` | `OutlineLookup.load(session, course_slug=…)` |
 | Capture ingestion / source routing | `app/services/ingest.py` | source-keyed adapter dispatch → `Question`/`Attempt` |
 | Question tagging (OpenAI) | `app/services/categorizer/` | `tag_question(...)` |
@@ -255,13 +260,16 @@ commented out, jobs unregistered) and are candidates for a later cull.
 
 | Surface | File(s) | Status |
 |---|---|---|
-| Mastery report service | `app/services/analytics.py` | FENCED; was called only by the deleted dashboard home route — now zero callers. |
-| Study-next recommender | `app/services/recommender.py` | FENCED; same — zero callers after dashboard deletion. |
-| Analytics / analyzer / recommendations routers | `app/api/v1/{analytics,analyzer,recommendations}.py` | Files present but **never mounted** (`include_router` calls commented out in `app/main.py`). Not in `/api/v1/*`. |
+| Study-next recommender | `app/services/recommender.py` | FENCED; zero callers after dashboard deletion. |
+| Analyzer / recommendations routers | `app/api/v1/{analyzer,recommendations}.py` | Files present but **never mounted** (`include_router` calls commented out in `app/main.py`). Not in `/api/v1/*`. |
 | Feature-extraction pipeline | `app/services/analyzer/*`, `run_feature_extraction_job` | Job **unregistered** in `start_scheduler` (FENCED, V-RB1). The `QuestionFeatures` it would populate is still surfaced in the tutor question payload, so the model + reader stay live; the writer (job) is off. |
 
 Reactivation, if ever wanted, means porting onto `OutlineNode` + `outline_subtree`
-(V-O5) and re-exposing via the public API — not a private route (V-D1).
+(V-O5) and re-exposing via the public API — not a private route (V-D1). The
+mastery report service did exactly this in T44 (`app/services/analytics.py` →
+`compute_node_mastery`/`compute_course_mastery`, exposed under
+`/api/v1/outline/.../mastery`), so it is no longer fenced; the old unmounted
+`app/api/v1/analytics.py` route + its AAMC-shaped schema were deleted.
 
 Guards: `tests/test_fence_guards.py` asserts these stay fenced (FENCED marker
 present, routers unmounted, feature-extraction job unregistered).

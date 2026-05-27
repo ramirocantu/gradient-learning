@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.anki import AnkiCard, AnkiNote, AnkiNoteTag
 from app.services.anki.client import AnkiConnectClient
 from app.services.anki.sync import sync_deck
-from app.services.categorizer.outline_lookup import OutlineLookup
+from app.services.outline.lookup import OutlineLookup
 
 
 _URL = "http://localhost:8765"

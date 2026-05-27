@@ -1,6 +1,5 @@
 """Admin-only endpoints.
 
-POST   /api/v1/admin/questions/{question_id}/recategorize
 POST   /api/v1/admin/questions/{question_id}/tags
 DELETE /api/v1/admin/tags/{tag_id}
 
@@ -32,31 +31,9 @@ from app.services.admin_tags import (
 from app.services.admin_tags import (
     QuestionNotFoundError as ManualTagQuestionNotFoundError,
 )
-from app.services.categorizer.cache import CategorizerCache
 from app.models.captures import QuestionTag
-from app.services.categorizer import (
-    QuestionNotFoundError,
-    TagQuestionResult,
-    serializable_suggestions,
-    tag_question,
-)
-from app.services.categorizer.outline_lookup import OutlineLookup
 
 router = APIRouter(prefix="/admin", tags=["admin"])
-
-
-def _openai_client() -> AsyncOpenAI:
-    """FastAPI dependency: per-request OpenAI client. V41 retries baked in."""
-    return build_openai_client(max_retries=5)
-
-
-def _categorizer_cache() -> CategorizerCache:
-    """FastAPI dependency: per-request CategorizerCache.
-
-    Each request opens its own connection to the shared SQLite file. Cheap;
-    WAL mode (set by CategorizerCache) keeps reads/writes non-blocking.
-    """
-    return CategorizerCache(settings.CATEGORIZER_CACHE_PATH)
 
 
 # --------------------------------------------------------------------------- #
@@ -95,59 +72,6 @@ async def _notion_status_client() -> AsyncIterator[Any]:
         yield client
     finally:
         await client.aclose()
-
-
-# --------------------------------------------------------------------------- #
-# POST /questions/{question_id}/recategorize
-# --------------------------------------------------------------------------- #
-
-
-def _tag_result_payload(result: TagQuestionResult) -> dict[str, Any]:
-    return {
-        "question_id": result.question_id,
-        "qid": result.qid,
-        "targets_persisted": result.targets_persisted,
-        "targets_replaced": result.targets_replaced,
-        "suggestions_unresolved": result.suggestions_unresolved,
-        "manual_tags_preserved": result.manual_tags_preserved,
-        "cache_hit": result.cache_hit,
-        "cost_estimate_usd": result.cost_estimate_usd,
-        "cost_saved_usd": result.cost_saved_usd,
-        "extractor_version": result.extractor_version,
-        "categorization": {
-            "primary_aamc_section": result.categorize_result.primary_aamc_section,
-            "suggestions": serializable_suggestions(result.categorize_result),
-            "input_tokens": result.categorize_result.input_tokens,
-            "output_tokens": result.categorize_result.output_tokens,
-            "parse_warnings": result.categorize_result.parse_warnings,
-            "model": result.categorize_result.model,
-        },
-    }
-
-
-@router.post("/questions/{question_id}/recategorize")
-async def recategorize_question(
-    question_id: int,
-    session: AsyncSession = Depends(get_session),
-    client: AsyncOpenAI = Depends(_openai_client),
-    cache: CategorizerCache = Depends(_categorizer_cache),
-) -> dict[str, Any]:
-    # NOTE: don't close `cache` here. Tests override the dep with a shared
-    # instance; closing would prevent subsequent requests in the same test
-    # from reading. In production the per-request CategorizerCache is GC'd
-    # when its reference drops, which releases the SQLite connection.
-    lookup = await OutlineLookup.load(session)
-    try:
-        result = await tag_question(
-            question_id,
-            session,
-            lookup=lookup,
-            openai_client=client,
-            cache=cache,
-        )
-    except QuestionNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return _tag_result_payload(result)
 
 
 # --------------------------------------------------------------------------- #
@@ -225,10 +149,7 @@ async def create_manual_tag(
 
 
 _VALID_JOBS = {
-    "run_categorizer",
-    "run_feature_extraction",
     "run_anki_sync",
-    "run_anki_topic_resolver",
     "run_anki_assignment_unlock",
     "run_anki_assignment_complete",
     "run_anki_review",

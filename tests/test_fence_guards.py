@@ -8,12 +8,13 @@ in-progress.
 
 Also confirms:
   - the consuming routes are unmounted (V-RB1 "route-disabled" clause),
-  - the feature-extraction scheduler entry is not registered (V-RB1
-    "route-disabled" extended to background work).
+  - the recommender/analyzer/categorizer surfaces deleted in T53 are gone
+    (importing them raises ModuleNotFoundError).
 """
 
 from __future__ import annotations
 
+import importlib
 import inspect
 import re
 
@@ -23,11 +24,7 @@ import app.main as main_mod
 import app.scheduler as scheduler_mod
 import app.api.v1.tutor as tutor_api_mod
 
-import app.services.recommender as recommender_mod
 import app.services.tutor.outline as tutor_outline_mod
-import app.services.analyzer as analyzer_mod
-import app.services.analyzer.patterns as analyzer_patterns_mod
-import app.services.analyzer.trajectory as analyzer_trajectory_mod
 import app.services.anki.queries as anki_queries_mod
 import app.services.anki.state as anki_state_mod
 import app.services.anki.retention as anki_retention_mod
@@ -54,14 +51,14 @@ _STUB_PATTERNS = [
 
 # NOTE: analytics_mod left this list in T44 — its mastery rollup was ported
 # onto OutlineNode + outline_subtree and re-exposed under
-# /api/v1/outline/.../mastery (no longer fenced).
+# /api/v1/outline/.../mastery (no longer fenced). The recommender + analyzer
+# surfaces left in T53 — they were DELETED, not fenced (see
+# test_deleted_legacy_surfaces_absent below). anki_queries_mod left in T53 too:
+# its FENCED subtree helpers were deleted with topic_subtree, leaving only the
+# live outline-free helpers — so it no longer self-documents as fenced (it
+# stays in _VRB2_MODULES for the legacy-SQL absence check).
 _FENCED_MODULES = [
-    recommender_mod,
     tutor_outline_mod,
-    analyzer_mod,
-    analyzer_patterns_mod,
-    analyzer_trajectory_mod,
-    anki_queries_mod,
     anki_state_mod,
     anki_retention_mod,
 ]
@@ -194,13 +191,39 @@ def test_vrb2_anki_api_module_drops_fenced_imports():
             )
 
 
-def test_scheduler_feature_extraction_unregistered():
-    """V-RB1 — `run_feature_extraction` scheduler entry is not registered."""
-    src = inspect.getsource(scheduler_mod.start_scheduler)
-    # Only commented (line starts with #) occurrences of the job id are allowed.
-    for match in re.finditer(r'id="run_feature_extraction"', src):
-        line_start = src.rfind("\n", 0, match.start()) + 1
-        line = src[line_start:match.start()]
-        assert line.lstrip().startswith("#"), (
-            "run_feature_extraction scheduler entry must be commented out (FENCED)"
-        )
+def test_scheduler_feature_extraction_absent():
+    """T53 — `run_feature_extraction` and `run_categorizer` jobs were deleted,
+    not fenced. They must not appear in the scheduler source at all (not even
+    commented out)."""
+    src = inspect.getsource(scheduler_mod)
+    assert "run_feature_extraction" not in src, (
+        "run_feature_extraction was deleted in T53 but still appears in scheduler"
+    )
+    assert "run_categorizer" not in src, (
+        "run_categorizer was deleted in T53 but still appears in scheduler"
+    )
+    assert "run_anki_topic_resolver" not in src, (
+        "run_anki_topic_resolver was deleted in T53 but still appears in scheduler"
+    )
+
+
+@pytest.mark.parametrize(
+    "module_path",
+    [
+        "app.services.recommender",
+        "app.services.topic_subtree",
+        "app.services.analyzer",
+        "app.services.eval",
+        "app.services.categorizer",
+        "app.services.llm.batch",
+        "app.api.v1.analyzer",
+        "app.api.v1.recommendations",
+        "app.services.anki.topic_resolver",
+        "app.schemas.recommendations",
+    ],
+)
+def test_deleted_legacy_surfaces_absent(module_path):
+    """T53 — legacy MCAT categorizer / analyzer / recommender / topic-resolver
+    surfaces were deleted (not fenced). Importing them must fail."""
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module(module_path)

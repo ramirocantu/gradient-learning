@@ -46,7 +46,7 @@ from app.services.anki.client import (
     AnkiUnreachableError,
 )
 from app.services.anki.tag_parser import parse_tag
-from app.services.categorizer.outline_lookup import OutlineLookup, OutlineNotSeededError
+from app.services.outline.lookup import OutlineLookup, OutlineNotSeededError
 
 
 logger = logging.getLogger(__name__)

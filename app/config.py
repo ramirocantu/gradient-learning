@@ -44,24 +44,8 @@ class Settings(BaseSettings):
     OPENAI_CALIBRATOR_MODEL: str = "gpt-4.1-mini"
     EMBEDDING_MODEL: str = "text-embedding-3-small"
 
-    # Per-call model overrides. Default to OPENAI_MODEL; .env can split them.
-    CATEGORIZER_MODEL: str = "gpt-4.1-mini"
-    CATEGORIZER_CACHE_PATH: Path = _BACKEND_ROOT / "data" / "categorizer-cache.db"
-
-    # Feature extractor (Ticket 4.2). Heavier judgment calls — pin to the
-    # full GPT-4.1 by default; the spike (T5) may bump this to a thinking
-    # model after a re-eval. Override via .env without code change.
-    FEATURE_EXTRACTOR_MODEL: str = "gpt-4.1"
-    FEATURE_EXTRACTOR_CACHE_PATH: Path = _BACKEND_ROOT / "data" / "feature-extractor-cache.db"
-
-    # Insight synthesizer (Ticket 4.5). Sonnet per CLAUDE.md convention.
-    SYNTHESIZER_CACHE_PATH: Path = _BACKEND_ROOT / "data" / "synthesizer-cache.db"
-
     # Scheduler (Ticket 6.9b)
     SCHEDULER_ENABLED: bool = True
-    CATEGORIZER_INTERVAL_MINUTES: int = 15
-    CATEGORIZER_PER_RUN_BUDGET_USD: float = 0.50
-    FEATURE_EXTRACTION_INTERVAL_MINUTES: int = 60
 
     # AnkiConnect (SPEC §T1, P11). Read-only HTTP client to a locally running
     # Anki desktop with the AnkiConnect addon. Sync job (T4) hits this URL.
@@ -72,15 +56,6 @@ class Settings(BaseSettings):
     ANKICONNECT_URL: str = "http://127.0.0.1:8765"
     ANKI_DECK_NAME: str = "MileDown"
     ANKI_SYNC_INTERVAL_MINUTES: int = 15
-
-    # Anki topic resolver (SPEC §T32). LLM pass over cards already parsed as
-    # aamc_cc — emits a topic_id suggestion under the parsed CC. Mirrors the
-    # UWorld categorizer pattern (cheap chat model, structured output, SQLite cache).
-    ANKI_TOPIC_RESOLVER_MODEL: str = "gpt-4.1-mini"
-    ANKI_TOPIC_RESOLVER_CACHE_PATH: Path = _BACKEND_ROOT / "data" / "anki-topic-resolver-cache.db"
-    ANKI_TOPIC_RESOLVER_INTERVAL_MINUTES: int = 60
-    ANKI_TOPIC_RESOLVER_PER_RUN_BUDGET_USD: float = 0.50
-    ANKI_TOPIC_RESOLVER_CONFIDENCE_THRESHOLD: float = 0.5
 
     # Anki deck prefix (SPEC §V50, §V58, T73). mcat-coach-created filtered review
     # decks live under `<ANKI_DECK_PREFIX>::review::*`; the AnkiConnect write

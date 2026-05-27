@@ -1,4 +1,4 @@
-"""APScheduler background jobs for categorizer and feature extraction.
+"""APScheduler background jobs for Anki sync, assignment, and review.
 
 Jobs write TaskRun rows to Postgres for history/monitoring. An in-flight
 guard prevents concurrent runs of the same job — APScheduler's interval
@@ -14,23 +14,12 @@ from datetime import datetime, timezone
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.config import settings
-from app.services.llm.client import build_openai_client
 from app.database import AsyncSessionLocal
 from app.models.task_run import TaskRun, TaskRunStatus
 from app.services.anki.assignment import run_complete_unlocked, run_unlock_due
 from app.services.anki.review import run_review_due
 from app.services.anki.client import AnkiConnectClient
 from app.services.anki.sync import sync_deck
-from app.services.anki.topic_resolver_cache import AnkiTopicResolverCache
-from app.services.anki.topic_resolver_worker import (
-    make_summary_text as make_anki_topic_summary_text,
-    run as run_anki_topic_resolver,
-)
-from app.services.categorizer.cache import CategorizerCache
-from app.services.categorizer.outline_lookup import OutlineLookup
-from app.services.categorizer.worker import run as run_categorizer
-from app.services.analyzer.cache import FeatureExtractorCache
-from app.services.analyzer.worker import run_extraction
 
 logger = logging.getLogger(__name__)
 
@@ -38,157 +27,6 @@ _inflight: set[str] = set()
 _lock = asyncio.Lock()
 
 scheduler = AsyncIOScheduler()
-
-
-# --------------------------------------------------------------------------- #
-# Categorizer job
-# --------------------------------------------------------------------------- #
-
-
-async def _do_run_categorizer() -> None:
-    # V41: max_retries=5 absorbs transient OpenAI errors at the SDK layer.
-    client = build_openai_client(max_retries=5)
-    cache = CategorizerCache(settings.CATEGORIZER_CACHE_PATH)
-    run_id: int | None = None
-    try:
-        async with AsyncSessionLocal() as session:
-            row = TaskRun(
-                job_name="run_categorizer",
-                started_at=datetime.now(timezone.utc),
-                status=TaskRunStatus.running,
-                items_processed=0,
-            )
-            session.add(row)
-            await session.flush()
-            run_id = row.id
-            await session.commit()
-
-        async with AsyncSessionLocal() as session:
-            lookup = await OutlineLookup.load(session)
-            summary = await run_categorizer(
-                session,
-                openai_client=client,
-                cache=cache,
-                max_cost_usd=settings.CATEGORIZER_PER_RUN_BUDGET_USD,
-                lookup=lookup,
-            )
-            await session.commit()
-
-        async with AsyncSessionLocal() as session:
-            run_row = await session.get(TaskRun, run_id)
-            if run_row is not None:
-                # V41 amended: partial_failure still ⇒ status='succeeded'. The
-                # error_text surfaces the transient cause so /admin shows it
-                # without paging on a non-fatal blip.
-                run_row.status = TaskRunStatus.succeeded
-                run_row.items_processed = summary.processed
-                run_row.cost_usd = summary.total_cost_usd
-                run_row.finished_at = datetime.now(timezone.utc)
-                if summary.partial_failure and summary.error:
-                    run_row.error_text = (
-                        f"partial: broke on transient API error after "
-                        f"{summary.succeeded} questions — {summary.error}"
-                    )[:2000]
-            await session.commit()
-
-        logger.info("run_categorizer finished: %s", summary.as_text())
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("run_categorizer failed: %s", exc)
-        if run_id is not None:
-            try:
-                async with AsyncSessionLocal() as session:
-                    run_row = await session.get(TaskRun, run_id)
-                    if run_row is not None:
-                        run_row.status = TaskRunStatus.failed
-                        run_row.error_text = str(exc)[:2000]
-                        run_row.finished_at = datetime.now(timezone.utc)
-                    await session.commit()
-            except Exception:  # noqa: BLE001
-                logger.exception("failed to record categorizer failure in task_runs")
-    finally:
-        cache.close()
-
-
-async def run_categorizer_job() -> None:
-    async with _lock:
-        if "run_categorizer" in _inflight:
-            logger.warning("run_categorizer already in-flight, skipping")
-            return
-        _inflight.add("run_categorizer")
-    try:
-        await _do_run_categorizer()
-    finally:
-        async with _lock:
-            _inflight.discard("run_categorizer")
-
-
-# --------------------------------------------------------------------------- #
-# Feature extraction job
-# --------------------------------------------------------------------------- #
-
-
-async def _do_run_feature_extraction() -> None:
-    client = build_openai_client(max_retries=5)
-    cache = FeatureExtractorCache(settings.FEATURE_EXTRACTOR_CACHE_PATH)
-    run_id: int | None = None
-    try:
-        async with AsyncSessionLocal() as session:
-            row = TaskRun(
-                job_name="run_feature_extraction",
-                started_at=datetime.now(timezone.utc),
-                status=TaskRunStatus.running,
-                items_processed=0,
-            )
-            session.add(row)
-            await session.flush()
-            run_id = row.id
-            await session.commit()
-
-        summary = await run_extraction(
-            AsyncSessionLocal,
-            openai_client=client,
-            cache=cache,
-            missed_only=False,
-        )
-
-        async with AsyncSessionLocal() as session:
-            run_row = await session.get(TaskRun, run_id)
-            if run_row is not None:
-                run_row.status = TaskRunStatus.succeeded
-                run_row.items_processed = summary.processed
-                run_row.cost_usd = summary.total_cost_usd
-                run_row.finished_at = datetime.now(timezone.utc)
-            await session.commit()
-
-        logger.info("run_feature_extraction finished: processed=%d", summary.processed)
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("run_feature_extraction failed: %s", exc)
-        if run_id is not None:
-            try:
-                async with AsyncSessionLocal() as session:
-                    run_row = await session.get(TaskRun, run_id)
-                    if run_row is not None:
-                        run_row.status = TaskRunStatus.failed
-                        run_row.error_text = str(exc)[:2000]
-                        run_row.finished_at = datetime.now(timezone.utc)
-                    await session.commit()
-            except Exception:  # noqa: BLE001
-                logger.exception("failed to record feature_extraction failure in task_runs")
-    finally:
-        cache.close()
-
-
-async def run_feature_extraction_job() -> None:
-    async with _lock:
-        if "run_feature_extraction" in _inflight:
-            logger.warning("run_feature_extraction already in-flight, skipping")
-            return
-        _inflight.add("run_feature_extraction")
-    try:
-        await _do_run_feature_extraction()
-    finally:
-        async with _lock:
-            _inflight.discard("run_feature_extraction")
 
 
 # --------------------------------------------------------------------------- #
@@ -263,86 +101,6 @@ async def run_anki_sync_job() -> None:
     finally:
         async with _lock:
             _inflight.discard("run_anki_sync")
-
-
-# --------------------------------------------------------------------------- #
-# Anki topic resolver job (SPEC §T32)
-# --------------------------------------------------------------------------- #
-
-
-async def _do_run_anki_topic_resolver() -> None:
-    # V41 (amended): max_retries≥5 absorbs transient OpenAI errors at the SDK
-    # boundary (429 rate-limit, 5xx, transport blips) before reaching the
-    # worker's per-card try/except.
-    client = build_openai_client(max_retries=5)
-    cache = AnkiTopicResolverCache(settings.ANKI_TOPIC_RESOLVER_CACHE_PATH)
-    run_id: int | None = None
-    try:
-        async with AsyncSessionLocal() as session:
-            row = TaskRun(
-                job_name="run_anki_topic_resolver",
-                started_at=datetime.now(timezone.utc),
-                status=TaskRunStatus.running,
-                items_processed=0,
-            )
-            session.add(row)
-            await session.flush()
-            run_id = row.id
-            await session.commit()
-
-        async with AsyncSessionLocal() as session:
-            summary = await run_anki_topic_resolver(
-                session,
-                openai_client=client,
-                cache=cache,
-                max_cost_usd=settings.ANKI_TOPIC_RESOLVER_PER_RUN_BUDGET_USD,
-            )
-            await session.commit()
-
-        async with AsyncSessionLocal() as session:
-            run_row = await session.get(TaskRun, run_id)
-            if run_row is not None:
-                run_row.status = TaskRunStatus.succeeded
-                run_row.items_processed = summary.persisted
-                run_row.cost_usd = summary.total_cost_usd
-                run_row.finished_at = datetime.now(timezone.utc)
-                # §V41: surface partial-failure so /admin run history shows it.
-                if summary.partial_failure and summary.error:
-                    run_row.error_text = (
-                        f"partial: broke on transient API error after "
-                        f"{summary.processed} cards — {summary.error}"
-                    )[:2000]
-            await session.commit()
-
-        logger.info("run_anki_topic_resolver finished: %s", make_anki_topic_summary_text(summary))
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("run_anki_topic_resolver failed: %s", exc)
-        if run_id is not None:
-            try:
-                async with AsyncSessionLocal() as session:
-                    run_row = await session.get(TaskRun, run_id)
-                    if run_row is not None:
-                        run_row.status = TaskRunStatus.failed
-                        run_row.error_text = str(exc)[:2000]
-                        run_row.finished_at = datetime.now(timezone.utc)
-                    await session.commit()
-            except Exception:  # noqa: BLE001
-                logger.exception("failed to record anki_topic_resolver failure in task_runs")
-    finally:
-        cache.close()
-
-
-async def run_anki_topic_resolver_job() -> None:
-    async with _lock:
-        if "run_anki_topic_resolver" in _inflight:
-            logger.warning("run_anki_topic_resolver already in-flight, skipping")
-            return
-        _inflight.add("run_anki_topic_resolver")
-    try:
-        await _do_run_anki_topic_resolver()
-    finally:
-        async with _lock:
-            _inflight.discard("run_anki_topic_resolver")
 
 
 # --------------------------------------------------------------------------- #
@@ -591,35 +349,10 @@ def start_scheduler() -> None:
     if not settings.SCHEDULER_ENABLED:
         return
     scheduler.add_job(
-        run_categorizer_job,
-        "interval",
-        minutes=settings.CATEGORIZER_INTERVAL_MINUTES,
-        id="run_categorizer",
-        replace_existing=True,
-    )
-    # FENCED (T17, V-RB1, V-O5): run_feature_extraction_job consumes the
-    # FENCED `app.services.analyzer.extract_features_for_question`. The job
-    # itself stays defined (imports + helpers remain usable for direct
-    # invocation under test), but no scheduler entry is registered.
-    # scheduler.add_job(
-    #     run_feature_extraction_job,
-    #     "interval",
-    #     minutes=settings.FEATURE_EXTRACTION_INTERVAL_MINUTES,
-    #     id="run_feature_extraction",
-    #     replace_existing=True,
-    # )
-    scheduler.add_job(
         run_anki_sync_job,
         "interval",
         minutes=settings.ANKI_SYNC_INTERVAL_MINUTES,
         id="run_anki_sync",
-        replace_existing=True,
-    )
-    scheduler.add_job(
-        run_anki_topic_resolver_job,
-        "interval",
-        minutes=settings.ANKI_TOPIC_RESOLVER_INTERVAL_MINUTES,
-        id="run_anki_topic_resolver",
         replace_existing=True,
     )
     scheduler.add_job(

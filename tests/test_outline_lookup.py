@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.database import Base
 from app.models.outline import Course, OutlineNode
-from app.services.categorizer.outline_lookup import (
+from app.services.outline.lookup import (
     OutlineLookup,
     OutlineNotSeededError,
 )

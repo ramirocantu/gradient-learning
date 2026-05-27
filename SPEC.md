@@ -17,7 +17,7 @@ Workflow:
 
 Architecture = **core + periphery**. The core is domain-blind. Everything MCAT-specific (AAMC outline, UWorld capture, AnKing tag shape) is a *plugin* — proving the seam, not privileged.
 
-**Primary loop = PKM (rescoped 2026-05-26).** Question review → discriminator factors → grounded atomic facts → Notion write-back is the load-bearing workflow. Study-plan / recommender surfaces (`app/services/recommender.py`, plan/calendar views) are non-critical; candidate-for-cut unless they directly serve the PKM loop. Raw mastery + Anki + tutor/QBank facts survive (they feed the loop).
+**Primary loop = PKM (rescoped 2026-05-26).** Question review → discriminator factors → grounded atomic facts → Notion write-back is the load-bearing workflow. Study-plan / recommender surfaces (`app/services/recommender.py`, plan/calendar views) are non-critical; candidate-for-cut unless they directly serve the PKM loop. Raw mastery + Anki + tutor/QBank facts survive (they feed the loop). **Categorization redesign (2026-05-27):** transition MCAT-only PoC → general coursework tool — legacy AAMC categorizer (`categorizer/{llm,worker}`, `SUBJECT_TO_SECTION`) + anki topic-resolver CUT; the LLM4Tag grounded path is the categorization engine (V-L4; T53 removes the old, T50 wires the new).
 
 ## §A — architecture (core vs plugin)
 
@@ -59,7 +59,7 @@ Seam = the normalized internal model + adapter registries keyed on `source` / `c
 - Cognitive-safety (hard rule): AI tags / summarizes / links / drafts; ⊥ generate primary active-recall questions or flashcards.
 - MCP role: data exposure + structured writes; LLM (host) = reasoner. ⊥ heuristics in tool signatures. Socratic dialogue host-side; discriminator tool persists only.
 - `Attempt.time_seconds` ⊥ actionable (carried hard constraint).
-- **Residual P0 tech debt (rebaseline 2026-05-26):** `app/services/anki/{queries,state,retention}.py` still reference `topic_id` / `cc_code` / `topics` / `content_categories`; `app/services/{analytics,recommender,analyzer,tutor/outline}.py` + `app/web/dashboard/services/{mastery,drilldown,anki_scope}.py` self-document as stubs / partial ports. (`app/startup.py` + `scripts/seed_outline.py` since DELETED 2026-05-27 — the implicit-seed-call debt is gone; see V-O6/V-RB3.) Treat as blocking debt — P0.5 gate clears it (V-RB1..V-RB4).
+- **Residual P0 tech debt (rebaseline 2026-05-26):** `app/services/anki/{queries,state,retention}.py` still reference `topic_id` / `cc_code` / `topics` / `content_categories`; `app/services/{analytics,recommender,analyzer,tutor/outline}.py` + `app/web/dashboard/services/{mastery,drilldown,anki_scope}.py` self-document as stubs / partial ports. (`app/startup.py` + `scripts/seed_outline.py` since DELETED 2026-05-27 — the implicit-seed-call debt is gone; see V-O6/V-RB3.) Treat as blocking debt — P0.5 gate clears it (V-RB1..V-RB4). **Categorizer redesign (2026-05-27):** the legacy MCAT categorizer + anki topic_resolver are no longer debt-to-port — CUT/deleted (V-L4, T53); fenced `recommender`/`analyzer` deleted as orphans too; shared `OutlineLookup` relocated out of `categorizer/`.
 - **KB substrate gap:** §I schema specifies `pdf_sources`, `atomic_facts`, `content_embeddings`, `concept_edges`, `notion_pages` but no SQLAlchemy models, Alembic migrations, or `pyproject.toml` deps (pgvector / notion-client / PyMuPDF/pdfplumber) exist yet. P2 lands the substrate before P3 workflow (V-KB1, V-KB2).
 
 ## §I — interfaces
@@ -81,7 +81,7 @@ concept_edges(
   UQ(src_node_id, dst_node_id, kind)   # cross-domain links
 
 questions(
-  id, source TEXT, external_id TEXT,   # (source, external_id) UQ
+  id, source TEXT, external_id TEXT,   # (source, external_id) UQ = TARGET; code today keys on `qid` (globally-UQ TEXT), external_id rename deferred (app/models/captures.py:97)
   stem_html, stem_plain, choices JSONB, correct_choice,
   explanation_html?, explanation_plain?, source_meta JSONB?,
   needs_categorization BOOL, first_seen_at, last_updated_at)
@@ -134,17 +134,17 @@ api: POST /api/v1/courses                         → Course
 api: POST /api/v1/courses/{id}/outline:import     # body = schema; validate → materialize nodes
 api: GET  /api/v1/courses/{id}/outline            → node tree
 job: (sync) outline_import — validate, dedupe, build parent chain
-docs: PROMPT_OUTLINE_SCHEMA.md — the template user runs against their own sources
-seed: seeds/aamc_outline.schema.json — MCAT reference; uploading it restores MCAT outline
+docs: docs/PROMPT_OUTLINE_SCHEMA.md — the template user runs against their own sources (NOT YET WRITTEN — T52)
+seed: app/seeds/aamc_outline.schema.json — MCAT reference; uploading it restores MCAT outline
 ```
 
 ### Ingress (notes → atomic facts → Notion)
 
 ```
 env: PDF_INBOX_DIR
-api: POST /api/v1/pdf/ingest {course_id, file}    # or scheduler-polled inbox
-job: run_pdf_ingest_job   # poll → extract → chunk → tag(node) → atomic facts → embed
-job: run_notion_sync_job  # one-way: per node, upsert a Notion page; facts = blocks; back-links + pointer row
+api: POST /api/v1/pdf/ingest {course_id, file}    # or scheduler-polled inbox (UNBUILT — T51)
+job: run_pdf_ingest_job   # poll → extract → chunk → tag(node) → atomic facts → embed (service kb/pdf_ingest.py built; job UNREGISTERED — T51)
+job: run_notion_sync_job  # one-way: per node, upsert a Notion page; facts = blocks; back-links + pointer row (service kb/notion.py built; job UNREGISTERED — T51)
 mcp: write_discriminator_factor(question_id, factor_text, node_id?)
 api: POST /api/v1/pkm/discriminators → DiscriminatorFactor   # persist-only (X-Coach-Token)
 ```
@@ -152,24 +152,36 @@ api: POST /api/v1/pkm/discriminators → DiscriminatorFactor   # persist-only (X
 ### Practice questions + mastery
 
 ```
-api: POST /api/v1/captures            # source-tagged; routes to source adapter
-api: POST /api/v1/questions           # manual entry
-api: GET  /api/v1/mastery/course/{id} → CourseSummary
-api: GET  /api/v1/mastery/node/{id}   → NodeSummary   # subtree-membership rollup
-job: run_categorizer_job   # tag needs_categorization questions vs course outline
-job: run_embed_job         # embed new questions/facts/nodes
-job: run_calibrate_job     # OpenAI logprob Conf; prune <0.5 → manual_review
-ext: source adapters — uworld (reference) | web-qbank | (manual = api) | pdf-qset (later)
+api: POST /api/v1/captures            # source-tagged; routes to source adapter (manual entry = source='manual', app/services/adapters/manual.py — ⊥ standalone /questions route)
+api: GET  /api/v1/outline/courses/{id}/mastery → CourseSummary   # (T44; was /mastery/course/{id})
+api: GET  /api/v1/outline/nodes/{id}/mastery   → NodeSummary     # subtree-membership rollup (T44)
+job: run_categorizer_job   # REMOVED — legacy MCAT categorizer CUT (V-L4, T53); run_grounded_tag_job (T50) replaces it
+job: run_grounded_tag_job  # LLM4Tag: recall→grounded→persist over needs_categorization Qs + untagged atomic_facts (seams built kb/recall+llm/grounded+kb/persist_tags; job UNREGISTERED — T50)
+job: run_embed_job         # embed new questions/facts/nodes → content_embeddings (UNREGISTERED — T50)
+job: run_calibrate_job     # OpenAI logprob Conf; prune <0.5 → manual_review (runs inline in grounded; standalone UNREGISTERED — T50)
+ext: source adapters — uworld (reference) | web-qbank | manual | pdf-qset (T37, later)
 ```
 
 ### Anki (reuse)
 
 ```
 env: ANKICONNECT_URL=http://127.0.0.1:8765 ; ANKI_DECK_NAME ; ANKI_SYNC_INTERVAL_MINUTES
-api: POST /api/v1/anki/sync ; GET /api/v1/anki/cards?node_id= ; GET review-queue ; load-adherence
-mcp: sync_anki ; get_anki_review_queue ; get_anki_cards_for_node ; get_anki_performance(node_id?, window_days?)
-job: run_anki_sync_job ; assignment/review jobs (carried)
+api: POST /api/v1/anki/sync ; GET /api/v1/anki/cards/by-qid/{qid} ; GET review-queue ; load-adherence   # /cards?node_id= FENCED (app/api/v1/anki.py:91)
+mcp: sync_anki (live) ; get_anki_review_queue (live) ; get_anki_cards_for_node + get_anki_performance (FENCED — backing /cards?node_id= + /performance commented, anki.py:91/172)
+job: run_anki_sync_job ; assignment/review jobs (carried)   # run_anki_topic_resolver REMOVED — MCAT AAMC card→topic LLM resolver CUT (V-L4, T53)
 plugin: anki tag-shape parser registry — AnKing-MCAT = reference; maps tag → node_id
+```
+
+### Other live API surface (documented from code — were EXTRA at /check §I 2026-05-27)
+
+```
+admin:    GET  /api/v1/admin/status ; GET /api/v1/admin/jobs ; DELETE /api/v1/admin/tags/{id}    # T39 (POST /recategorize REMOVED — drove legacy categorizer, V-L4/T53)
+notes:    GET/POST /api/v1/attempts/{id}/notes ; DELETE /api/v1/attempts/notes/{id}
+kb-reads: GET /api/v1/concept-edges ; GET /api/v1/atomic-facts ;
+          GET /api/v1/notion/pages ; GET /api/v1/pdf-sources                                 # T45–T48
+tutor:    GET /api/v1/tutor/{questions/by-qid/{qid}, questions/by-attempt-id/{id},
+          captures/recent, sessions/latest, sessions/recent, sessions/{id}/summary,
+          attempts/flagged, outline/nodes/search, outline, outline/nodes/{id}/subtree}       # node_id-only data seam (§A); T22/T38/T42
 ```
 
 ### Env
@@ -249,6 +261,7 @@ NOTION_API_TOKEN ; NOTION_WIKI_DB_ID    # ⊥ commit
 
 **Retrieval (LLM4Tag Phase 1)**
 - V-L3: tagging prompts for atomic facts / questions are constrained by retrieved outline-node candidates (embeddings + `concept_edges.kind='similarity'` + optional few-shot exemplars from prior calibrated tags). ⊥ raw free-form judgment over the full outline. Recall layer feeds candidates; calibrator (V69) scores them.
+- V-L4 (redesign CUT, 2026-05-27): legacy MCAT categorizer REMOVED. ⊥ `app/services/categorizer/{llm,worker,cache,_text}.py`, ⊥ `SUBJECT_TO_SECTION` / `uworld_aamc_tags`-driven per-section tagging, ⊥ `app/services/anki/topic_resolver*.py`. The LLM4Tag grounded path (`kb/recall` + `llm/grounded` + `kb/persist_tags` + `llm/calibrator`, V-L3/V69) is the SOLE categorization/tagging seam, wired live by T50. `OutlineLookup` + `normalize_typographic` are domain-blind core infra — live OUTSIDE `categorizer/` (relocated `app/services/outline/lookup.py`), ⊥ deleted with the categorizer. Categorization may be non-functional until T50; gap is intentional (PoC→general-tool transition). See §G, T53.
 
 **MCP write-back**
 - V-M3: discriminator writes via tutor/MCP seam append-only. ⊥ duplicate prior notes (dedupe by `(question_id, factor_text)` hash); question ↔ factor links preserved across re-writes. Notion mirror update (V-N1, V-N2) idempotent — block append, ⊥ page rewrite.
@@ -334,6 +347,10 @@ P0 — schema generalize + OpenAI pivot. Ids are monotonic, not positional: T12�
 | T47 | x | (client-unblock, desktop ¶T10) `GET /api/v1/notion/pages` read API: expose the `notion_pages` pointer index (`node_id`, `title`, `url`, `block_count`, `last_synced`, `status`) for the page-index view. Read of OUR pointer index per V-N1 (⊥ Notion read-back); one page per node (V-N2). Substrate + Notion write-out already built (T24,T32 = x); ⊥ infra-gated. Blocker = build the route + populate `notion_pages` (run write-out; empty until then) | V-N1,V-N2,V-D1 |
 | T48 | x | (client-unblock, desktop ¶T11) `GET /api/v1/pdf-sources` read API (inbox): expose `pdf_sources` (`filename`, `pages`, `status`, `facts_count`, `ingested_at`, `node_id`, `sha`). Substrate + PDF ingest seam already built (T24,T26 = x); ⊥ infra-gated. Blocker = build the route + populate `pdf_sources` (drop PDFs → ingest runs; empty until then) | V-KB1,V-D1 |
 | T49 | . | (deferred, `/check` §V drift 2026-05-27) strip residual legacy token names from FENCED anki reads `app/services/anki/{queries,state,retention}.py`: `topic_id`/`cc_code`/`content_category_id`/`skill_number` survive as commented-out / route-disabled stub params+returns (fenced imports `app/api/v1/anki.py:33-40`) → V-RB2 holds via fence escape-clause but breaches literal "zero references"; same fenced-but-named surface that hid B4. Rename → `node_id` or delete dead stubs. Low priority — fenced, ⊥ critical path | V-RB2,V-O5 |
+| T50 | . | (orchestration, `/check` §I 2026-05-27) wire the built-but-idle LLM4Tag pipeline into the scheduler: define + register `run_embed_job` (embed new questions/facts/`outline_nodes` → `content_embeddings`, V-E1 version stamp), `run_grounded_tag_job` (recall→grounded→persist over `needs_categorization` Qs + untagged `atomic_facts`), `run_calibrate_job` (prune Conf<0.5→`manual_review`) in `app/scheduler.py`. Seams (`kb/recall`, `llm/grounded`, `kb/persist_tags`, `llm/calibrator`) built+tested — this is the runner + V41 partial-failure/`task_run` discipline. Lights up substrate so T45/T46 stop returning `[]` | V-L3,V69,V-E1,V-T2,V-T3,V41,I.job |
+| T51 | . | (orchestration, `/check` §I 2026-05-27) PDF ingest + Notion write-out runners + endpoint: add `POST /api/v1/pdf/ingest {course_id, file}`; define + register `run_pdf_ingest_job` (poll `PDF_INBOX_DIR` → `kb/pdf_ingest` → extract → chunk → `atomic_facts` → embed) + `run_notion_sync_job` (one-way per-node upsert over `notion_pages` pointer, idempotent). Services `kb/pdf_ingest.py` + `kb/notion.py` built — wires scheduler + API. Lights up T47/T48 substrate | V-KB1,V-N1,V-N2,I.api,I.job |
+| T52 | . | (docs, `/check` §I 2026-05-27) write `docs/PROMPT_OUTLINE_SCHEMA.md` — shipped template the user runs against own sources (PDF/screenshot/webpage) to generate an upload outline schema; §I outline-import references it, file absent | I.outline-import,§G |
+| T53 | x | (redesign CUT, 2026-05-27) remove legacy MCAT categorizer + anki topic_resolver + orphaned dead code; relocate shared `OutlineLookup`. CUT: `app/services/categorizer/{llm,worker,cache,_text}.py`, `SUBJECT_TO_SECTION` in `outline_render.py`, `app/services/anki/topic_resolver{,_worker,_batch,_cache}.py`, `run_categorizer`+`run_anki_topic_resolver` scheduler jobs + `POST /api/v1/admin/questions/{id}/recategorize`; orphans `app/api/v1/{analyzer,recommendations}.py`, `app/services/analyzer/*`, `app/services/recommender.py`, `app/services/topic_subtree.py`, `app/services/llm/batch.py`, dead `run_feature_extraction_job` wiring + commented router lines; their tests (`test_mechanical_features`, `test_llm_batch`, `test_v_l2_harness`, relevant `test_fence_guards`/`test_anki_queries_smoke` entries). RELOCATE `OutlineLookup`+`normalize_typographic` → `app/services/outline/lookup.py` (domain-blind); update importers (scheduler, admin, admin_tags, anki sync+tag_parser, tutor flags/questions/outline). KEEP: AAMC seed, uworld/manual/web-qbank adapters, AnKing `tag_parser`. Gate: suite green after. | V-L4,V-O5,V-RB1,V-L3 |
 
 ## §B — bug log
 

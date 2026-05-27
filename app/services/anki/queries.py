@@ -1,27 +1,18 @@
 """Read queries against anki_cards / anki_note_tags.
 
-Partially FENCED (T18, V-RB2, V-O5). The topic/CC-subtree query helpers
-(`list_cards_for_topic`, `list_cards_for_cc`, `list_review_queue_for_cc`,
-`list_review_queue_for_topic_subtree`, `due_count_for_subtree`) are
-FENCED — their consumers (`/api/v1/anki/cards?topic_id=...`, the
-dashboard topics/mastery surfaces) are route-disabled per T17/T18.
-Restoration is tied to the node_id subtree-set port (post-P0.5,
-candidate for P3 or T34 SPA reassessment).
-
 The outline-free helpers (`list_review_queue`, `list_cards_for_qid`,
 `get_tag_parse_stats`, `get_tag_card_coverage`, `get_anki_card_total`)
-remain real — they work unchanged on the canonical `anki_note_tags`
-and back the still-mounted anki dashboard / API routes.
+work on the canonical `anki_note_tags` and back the still-mounted anki
+dashboard / API routes.
 
-This file is partially FENCED, not a stub: behavior is deliberate, not
-in-progress.
+The topic/CC-subtree query helpers were removed with the legacy
+topic_subtree module (T49/T53); restoration would be tied to a future
+node_id subtree-set port.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime
-from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,69 +32,7 @@ def _clamp_limit(limit: int) -> int:
 
 
 # --------------------------------------------------------------------------- #
-# Subtree-scope helpers — FENCED (T18, V-RB2, V-O5).
-# --------------------------------------------------------------------------- #
-
-
-_FENCED_MSG = (
-    "anki.queries subtree-scope helpers are FENCED (T18, V-RB2) — "
-    "consumer routes unmounted; restoration pending node_id subtree port"
-)
-
-
-async def list_cards_for_topic(
-    session: AsyncSession, *, topic_id: int, limit: int = 50
-) -> list[AnkiCard]:
-    """FENCED — returns empty list. See module docstring."""
-    logger.warning(_FENCED_MSG)
-    return []
-
-
-async def list_cards_for_cc(
-    session: AsyncSession, *, cc_code: str, limit: int = 20
-) -> list[AnkiCard]:
-    """FENCED — returns empty list. See module docstring."""
-    logger.warning(_FENCED_MSG)
-    return []
-
-
-async def list_review_queue_for_cc(
-    session: AsyncSession,
-    *,
-    cc_code: str,
-    due_before: datetime,
-    limit: int = 20,
-) -> list[AnkiCard]:
-    """FENCED — returns empty list. See module docstring."""
-    logger.warning(_FENCED_MSG)
-    return []
-
-
-async def list_review_queue_for_topic_subtree(
-    session: AsyncSession,
-    *,
-    topic_id: int,
-    due_before: datetime,
-    limit: int = 20,
-) -> list[AnkiCard]:
-    """FENCED — returns empty list. See module docstring."""
-    logger.warning(_FENCED_MSG)
-    return []
-
-
-async def due_count_for_subtree(
-    session: AsyncSession,
-    *,
-    topic_id: int,
-    due_before: datetime,
-) -> int:
-    """FENCED — returns 0. See module docstring."""
-    logger.warning(_FENCED_MSG)
-    return 0
-
-
-# --------------------------------------------------------------------------- #
-# Outline-free helpers — preserved (work unchanged on canonical anki_note_tags).
+# Outline-free helpers — work on canonical anki_note_tags.
 # --------------------------------------------------------------------------- #
 
 

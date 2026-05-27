@@ -74,7 +74,7 @@ async def test_note_tags_preserve_all_sources(db_session: AsyncSession) -> None:
                 note_id=note.note_id,
                 tag_raw="#AK_MCAT_v2::#AAMC::Concepts::C/P::Foundational_Concept_4::4A-Motion",
                 parsed_kind="aamc_cc",
-                source="regex",
+                source="schema_map",
             ),
             AnkiNoteTag(
                 note_id=note.note_id,
@@ -97,12 +97,12 @@ async def test_note_tags_preserve_all_sources(db_session: AsyncSession) -> None:
 
     rows = await _note_tags(db_session, note.note_id)
     by_source = {r.source: r for r in rows}
-    assert set(by_source) == {"regex", "llm", "manual"}
+    assert set(by_source) == {"schema_map", "llm", "manual"}
     llm = by_source["llm"]
     assert float(llm.confidence) == pytest.approx(0.82)
     assert llm.rationale == "stem describes constant-velocity motion"
     assert llm.extractor_version == "anki-v9"
-    assert by_source["regex"].confidence is None
+    assert by_source["schema_map"].confidence is None
 
 
 # --- FK integrity (§V75) ---
@@ -118,7 +118,7 @@ async def test_anki_card_note_fk_rejects_orphan(db_session: AsyncSession) -> Non
 async def test_anki_note_tag_fk_rejects_orphan(db_session: AsyncSession) -> None:
     """anki_note_tags.note_id must reference an existing note."""
     db_session.add(
-        AnkiNoteTag(note_id=9_999_999_999_998, tag_raw="x", parsed_kind="unparsed", source="regex")
+        AnkiNoteTag(note_id=9_999_999_999_998, tag_raw="x", parsed_kind="unparsed", source="schema_map")
     )
     with pytest.raises(IntegrityError):
         await db_session.flush()
@@ -128,28 +128,20 @@ async def test_anki_note_tag_unique_per_note_tag_raw(db_session: AsyncSession) -
     """§V75 UNIQUE(note_id, tag_raw): the collapse target rejects dup rows."""
     note = await _make_note(db_session, 5_000_000_000_004)
     db_session.add(
-        AnkiNoteTag(note_id=note.note_id, tag_raw="dup", parsed_kind="unparsed", source="regex")
+        AnkiNoteTag(note_id=note.note_id, tag_raw="dup", parsed_kind="unparsed", source="schema_map")
     )
     await db_session.flush()
     db_session.add(
-        AnkiNoteTag(note_id=note.note_id, tag_raw="dup", parsed_kind="unparsed", source="regex")
+        AnkiNoteTag(note_id=note.note_id, tag_raw="dup", parsed_kind="unparsed", source="schema_map")
     )
     with pytest.raises(IntegrityError):
         await db_session.flush()
 
 
-async def test_anki_note_tag_check_constraints_mirror_card_tag(db_session: AsyncSession) -> None:
-    """§V3/§V24: parsed_kind + source closed sets mirror the retired anki_card_tags."""
-    note = await _make_note(db_session, 5_000_000_000_005)
-    db_session.add(
-        AnkiNoteTag(
-            note_id=note.note_id, tag_raw="bad-kind", parsed_kind="nonsense", source="regex"
-        )
-    )
-    with pytest.raises(IntegrityError):
-        await db_session.flush()
-    await db_session.rollback()
-
+async def test_anki_note_tag_source_check_constraint(db_session: AsyncSession) -> None:
+    """V-T2: `source` is the closed set {schema_map, llm, manual}; a bogus
+    source is rejected. (`parsed_kind` is free-text provenance — no CHECK —
+    since the retired 3-target's `aamc_cc`/`aamc_topic` enum was dropped.)"""
     note = await _make_note(db_session, 5_000_000_000_006)
     db_session.add(
         AnkiNoteTag(
@@ -200,7 +192,7 @@ async def test_anki_note_relationships_load(db_session: AsyncSession) -> None:
     note = await _make_note(db_session, 5_000_000_000_007)
     card = await _make_card(db_session, 8001, note.note_id)
     db_session.add(
-        AnkiNoteTag(note_id=note.note_id, tag_raw="t::x", parsed_kind="unparsed", source="regex")
+        AnkiNoteTag(note_id=note.note_id, tag_raw="t::x", parsed_kind="unparsed", source="schema_map")
     )
     await db_session.flush()
     await db_session.refresh(note, attribute_names=["cards", "tags"])
@@ -221,14 +213,14 @@ async def test_anki_card_tags_view_resolves_to_note_tags(db_session: AsyncSessio
                 note_id=note.note_id,
                 tag_raw="aamc::CP::4A::a",
                 parsed_kind="aamc_topic",
-                source="regex",
+                source="schema_map",
             ),
             AnkiNoteTag(
                 note_id=note.note_id,
                 tag_raw="uworld::qid::123",
                 question_qid="123",
                 parsed_kind="uworld_qid",
-                source="regex",
+                source="schema_map",
             ),
         ]
     )

@@ -27,9 +27,7 @@ from app.api.v1.tutor import router as tutor_router
 from app.config import settings
 from app.kb_config import validate_kb_config
 from app.scheduler import start_scheduler, stop_scheduler
-from app.web.dashboard.main import app as dashboard_app
 from app.web.media import router as media_router
-from app.web.viewer.main import app as viewer_app
 
 
 @asynccontextmanager
@@ -78,15 +76,10 @@ async def health_check():
     return {"status": "ok"}
 
 
-# Media — root-mounted, serves /media/{file_path}. Registered before the
-# dashboard's catch-all "/" mount so the dashboard router doesn't shadow it.
+# Media — serves /media/{file_path} (PDF/image assets referenced by API
+# responses). Backend-only: there is no view layer; clients (native app,
+# Chrome extension, MCP host) consume /api/v1/* + /media/* over HTTP.
 app.include_router(media_router)
-
-# Viewer sub-app (capture browser, dev tool) mounted at /viewer/*.
-app.mount("/viewer", viewer_app)
-
-# Dashboard mounted last at "/" — catch-all for the user-facing UI.
-app.mount("/", dashboard_app)
 
 
 _ingest_logger = logging.getLogger("app.ingest.validation")

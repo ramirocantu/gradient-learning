@@ -6,7 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.attempt_note import AttemptNote
-from app.models.captures import Attempt, Question
+from app.models.captures import Attempt, Question, QuestionTag
+from app.services.tutor.outline import resolve_node_labels
 
 
 async def get_recent_captures(session: AsyncSession, *, n: int = 5) -> list[dict[str, Any]]:
@@ -27,8 +28,25 @@ async def get_recent_captures(session: AsyncSession, *, n: int = 5) -> list[dict
     attempt_ids = [a.id for a, _, _ in rows]
     question_ids = [a.question_id for a, _, _ in rows]
 
-    # TODO(T14 follow-up): resolve QuestionTag.node_id → OutlineLookup.path_of().
-    topics_by_q: dict[int, list[str]] = {}
+    # T38 (V-T1, V-O5): resolve each question's canonical node tags → label +
+    # `>>` path. Non-overridden tags only; dedup by node_id, deterministic order.
+    tag_rows = (
+        (
+            await session.execute(
+                select(QuestionTag.question_id, QuestionTag.node_id)
+                .where(QuestionTag.question_id.in_(question_ids))
+                .where(QuestionTag.is_overridden.is_(False))
+            )
+        ).all()
+        if question_ids
+        else []
+    )
+    labels = await resolve_node_labels(session, {nid for _, nid in tag_rows})
+    topics_by_q: dict[int, dict[int, dict[str, Any]]] = {}
+    for q_id, node_id in tag_rows:
+        label = labels.get(node_id)
+        if label is not None:
+            topics_by_q.setdefault(q_id, {})[node_id] = label
 
     note_rows = (
         (
@@ -66,7 +84,10 @@ async def get_recent_captures(session: AsyncSession, *, n: int = 5) -> list[dict
                 "selected_choice": attempt.selected_choice,
                 "flagged": attempt.flagged,
                 "uworld_test_id": attempt.uworld_test_id,
-                "topics": topics_by_q.get(attempt.question_id, []),
+                "topics": [
+                    topics_by_q[attempt.question_id][nid]
+                    for nid in sorted(topics_by_q.get(attempt.question_id, {}))
+                ],
                 "notes": notes_by_attempt.get(attempt.id, []),
             }
         )

@@ -22,7 +22,6 @@ import pytest
 import app.main as main_mod
 import app.scheduler as scheduler_mod
 import app.api.v1.tutor as tutor_api_mod
-import app.web.dashboard.main as dashboard_main_mod
 
 import app.services.analytics as analytics_mod
 import app.services.recommender as recommender_mod
@@ -30,9 +29,6 @@ import app.services.tutor.outline as tutor_outline_mod
 import app.services.analyzer as analyzer_mod
 import app.services.analyzer.patterns as analyzer_patterns_mod
 import app.services.analyzer.trajectory as analyzer_trajectory_mod
-import app.web.dashboard.services.mastery as dash_mastery_mod
-import app.web.dashboard.services.drilldown as dash_drilldown_mod
-import app.web.dashboard.services.anki_scope as dash_anki_scope_mod
 import app.services.anki.queries as anki_queries_mod
 import app.services.anki.state as anki_state_mod
 import app.services.anki.retention as anki_retention_mod
@@ -64,9 +60,6 @@ _FENCED_MODULES = [
     analyzer_mod,
     analyzer_patterns_mod,
     analyzer_trajectory_mod,
-    dash_mastery_mod,
-    dash_drilldown_mod,
-    dash_anki_scope_mod,
     anki_queries_mod,
     anki_state_mod,
     anki_retention_mod,
@@ -153,17 +146,6 @@ def test_tutor_outline_node_routes_mounted():
         "legacy `/outline/topics/search` decorator string should be removed "
         "(T22 replaced with `/outline/nodes/search`)"
     )
-
-
-def test_dashboard_routers_for_fenced_surfaces_unmounted():
-    """V-RB1 route-disabled clause — dashboard mastery/topics/
-    recommendations/insights routes are not registered."""
-    src = inspect.getsource(dashboard_main_mod)
-    for name in ("mastery", "topics", "recommendations", "insights"):
-        active = re.search(rf"^app\.include_router\({name}\.router\)", src, re.MULTILINE)
-        assert not active, (
-            f"dashboard `{name}` route still mounted; expected FENCED comment-out"
-        )
 
 
 @pytest.mark.parametrize("module", _VRB2_MODULES, ids=lambda m: m.__name__)

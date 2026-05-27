@@ -1,4 +1,23 @@
 import os
+
+# T40 / V-TC1: isolate test config from a developer's .env BEFORE any
+# app.config import builds the `settings` singleton. GRADIENT_DISABLE_DOTENV
+# makes Settings skip its env_file (see app/config.py), so:
+#   - COACH_TOKEN falls back to its "change_me_before_use" default (the value
+#     the auth tests hardcode), instead of a real .env token → no spurious 401s;
+#   - NOTION_API_TOKEN / OPENAI_API_KEY stay unset → /admin/status probes report
+#     unconfigured and never hit a live API (V16);
+#   - DATABASE_URL is pinned to the test DB here (the field has no default).
+# Popping the others guards against a shell that exports them.
+os.environ["GRADIENT_DISABLE_DOTENV"] = "1"
+for _leak in ("COACH_TOKEN", "NOTION_API_TOKEN", "NOTION_WIKI_DB_ID", "OPENAI_API_KEY"):
+    os.environ.pop(_leak, None)
+_HOST_PORT = os.environ.get("HOST_POSTGRES_PORT", "5432")
+os.environ["DATABASE_URL"] = (
+    f"postgresql+asyncpg://gradient:gradient_secret@localhost:{_HOST_PORT}/gradient_test"
+)
+
+import json
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -18,9 +37,10 @@ from app.database import Base
 # New collect-ignores should re-introduce this list only when a
 # FENCED-but-undeletable surface appears.
 
-_HOST_PORT = os.environ.get("HOST_POSTGRES_PORT", "5432")
+# _HOST_PORT already resolved at module top (before the app imports above).
 TEST_DB_URL = f"postgresql+asyncpg://gradient:gradient_secret@localhost:{_HOST_PORT}/gradient_test"
 _ADMIN_DSN = f"postgresql://gradient:gradient_secret@localhost:{_HOST_PORT}/gradient"
+_AAMC_SEED_SCHEMA = Path(__file__).resolve().parent.parent / "app" / "seeds" / "aamc_outline.schema.json"
 
 
 @pytest.fixture(scope="session")
@@ -59,11 +79,11 @@ async def test_engine(test_media_root):
 
 @pytest.fixture(scope="session")
 async def seeded_report(test_engine):
-    from scripts.seed_outline import seed
-
-    async with AsyncSession(test_engine) as session:
-        report = await seed(session)
-    return report
+    # No-op: outline seeding is not a startup/seed step (V-O6). The AAMC
+    # outline is an uploaded schema materialized via
+    # POST /api/v1/courses/{id}/outline:import. Kept as a session-scoped
+    # fixture so existing dependents order after `test_engine`.
+    return None
 
 
 @pytest.fixture
@@ -121,24 +141,36 @@ async def session(db_session: AsyncSession) -> AsyncSession:
 
 
 @pytest.fixture
+async def seed_aamc_outline(db_session: AsyncSession):
+    """Materialize the bundled AAMC outline (course slug ``aamc``) into the
+    test DB so ``OutlineLookup.load`` resolves.
+
+    V-O6: this is the *explicit* validate→materialize import path (the same
+    one the upload route drives), invoked by a fixture — NOT a revived
+    implicit startup seed. Function-scoped + flushed into the per-test
+    savepoint, so it survives the subset-rebuild tests that DROP SCHEMA and
+    rolls back with the test like everything else.
+    """
+    from app.services.outline import materialize_outline, validate_outline_schema
+
+    payload = json.loads(_AAMC_SEED_SCHEMA.read_text())
+    validated = validate_outline_schema(payload)
+    await materialize_outline(db_session, validated)
+    await db_session.flush()
+    return validated
+
+
+@pytest.fixture
 async def client(_test_connection) -> AsyncIterator[AsyncClient]:
-    """Unified HTTP client targeting ``backend/app/main.py:app``.
+    """Unified HTTP client targeting ``app/main.py:app``.
 
-    Routes through the real mount paths:
-      - dashboard tests hit ``/``
-      - viewer tests hit ``/viewer/*``
-      - API tests hit ``/api/v1/*``
-
-    Overrides ``get_session`` on the parent app and on both sub-apps to
-    bind to the per-test connection — so commits inside route handlers
+    The app is backend-only — every route lives on the main app
+    (``/api/v1/*``, ``/healthz``, ``/media/*``). Overrides ``get_session``
+    to bind to the per-test connection — so commits inside route handlers
     become savepoint releases and roll back with the outer transaction.
     """
     from app.api.deps import get_session as api_get_session
     from app.main import app
-    from app.web.dashboard.db import get_session as dashboard_get_session
-    from app.web.dashboard.main import app as dashboard_app
-    from app.web.viewer.db import get_session as viewer_get_session
-    from app.web.viewer.main import app as viewer_app
 
     Sm = async_sessionmaker(
         bind=_test_connection,
@@ -162,8 +194,6 @@ async def client(_test_connection) -> AsyncIterator[AsyncClient]:
                 raise
 
     app.dependency_overrides[api_get_session] = override_get_session
-    dashboard_app.dependency_overrides[dashboard_get_session] = override_get_session
-    viewer_app.dependency_overrides[viewer_get_session] = override_get_session
 
     try:
         transport = ASGITransport(app=app)
@@ -171,5 +201,3 @@ async def client(_test_connection) -> AsyncIterator[AsyncClient]:
             yield c
     finally:
         app.dependency_overrides.pop(api_get_session, None)
-        dashboard_app.dependency_overrides.pop(dashboard_get_session, None)
-        viewer_app.dependency_overrides.pop(viewer_get_session, None)

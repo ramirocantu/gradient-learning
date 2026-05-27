@@ -1,5 +1,0 @@
-{# <option> rows for the dynamic topic dropdown. Required context: topics. #}
-<option value="">— None (CC only) —</option>
-{% for t in topics %}
-  <option value="{{ t.id }}">{{ t.name }}</option>
-{% endfor %}

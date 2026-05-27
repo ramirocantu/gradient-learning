@@ -433,11 +433,8 @@ async def test_unlock_due_now_override_changes_due_filter(
 
 
 def test_run_anki_assignment_unlock_in_valid_jobs() -> None:
-    """`/admin` Run-now plumbing relies on the job id appearing in both
-    the dashboard `_JOBS` list and the API `_VALID_JOBS` set."""
+    """Admin `/jobs/{name}/trigger` plumbing relies on the job id appearing
+    in the API `_VALID_JOBS` set."""
     from app.api.v1.admin import _VALID_JOBS
-    from app.web.dashboard.routes.admin import _JOB_DISPLAY, _JOBS
 
     assert "run_anki_assignment_unlock" in _VALID_JOBS
-    assert "run_anki_assignment_unlock" in _JOBS
-    assert "run_anki_assignment_unlock" in _JOB_DISPLAY

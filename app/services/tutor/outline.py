@@ -23,6 +23,7 @@ HTTP-side.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from typing import Any
 
 from sqlalchemy import select
@@ -78,6 +79,45 @@ async def _load_course_by_slug(session: AsyncSession, slug: str) -> Course:
     if course is None:
         raise CourseNotFoundError(slug)
     return course
+
+
+async def resolve_node_labels(
+    session: AsyncSession, node_ids: Iterable[int]
+) -> dict[int, dict[str, Any]]:
+    """Resolve `node_id`s → `{node_id, name, path, kind}` (T38, V-O1, V-O5).
+
+    Renders each node's full `>>`-joined path by walking parents. Loads every
+    node in the involved courses so the parent walk resolves even when the
+    tagged nodes are deep leaves; cross-course safe (V-O3). Unknown / `None`
+    ids are dropped — callers surface only resolvable tags. ⊥ verdict (V-M1):
+    pure data exposure.
+    """
+    ids = {i for i in node_ids if i is not None}
+    if not ids:
+        return {}
+    target_rows = (
+        await session.execute(select(OutlineNode).where(OutlineNode.id.in_(ids)))
+    ).scalars().all()
+    if not target_rows:
+        return {}
+
+    course_ids = {n.course_id for n in target_rows}
+    all_rows = (
+        await session.execute(
+            select(OutlineNode).where(OutlineNode.course_id.in_(course_ids))
+        )
+    ).scalars().all()
+    node_by_id = {n.id: n for n in all_rows}
+
+    return {
+        n.id: {
+            "node_id": n.id,
+            "name": n.name,
+            "path": _path_of(node_by_id, n),
+            "kind": n.kind,
+        }
+        for n in target_rows
+    }
 
 
 async def search_nodes(

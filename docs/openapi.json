@@ -1,0 +1,3391 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MCAT Coach",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/v1/captures": {
+      "post": {
+        "summary": "Post Capture",
+        "operationId": "post_capture_api_v1_captures_post",
+        "parameters": [
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CapturePayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/courses": {
+      "get": {
+        "tags": [
+          "outline"
+        ],
+        "summary": "List Courses",
+        "description": "List all courses (slug-ordered). The SPA course picker needs to\nenumerate courses; per V-D1 that read extends the public API rather\nthan a dashboard-private route.",
+        "operationId": "list_courses_api_v1_courses_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array",
+                  "title": "Response List Courses Api V1 Courses Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "outline"
+        ],
+        "summary": "Create Course",
+        "operationId": "create_course_api_v1_courses_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCourseBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Create Course Api V1 Courses Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/courses/{course_id}/outline:import": {
+      "post": {
+        "tags": [
+          "outline"
+        ],
+        "summary": "Import Outline",
+        "description": "V-O2: validate-then-materialize, atomic. The body matches the \u00a7I shape:\n\n    { \"course\": {\"slug\",\"name\",\"description?\"},\n      \"nodes\": [ {\"path\":[...], \"kind\", \"name\", \"position?\"}, ... ] }\n\nThe validator surfaces every problem in one 422 (whole-upload rejection).\nOn success, the materializer wipes any existing outline for the course\nand inserts the new tree in one transaction (V-O3: re-upload restores).",
+        "operationId": "import_outline_api_v1_courses__course_id__outline_import_post",
+        "parameters": [
+          {
+            "name": "course_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Course Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Import Outline Api V1 Courses  Course Id  Outline Import Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/courses/{course_id}/outline": {
+      "get": {
+        "tags": [
+          "outline"
+        ],
+        "summary": "Read Outline",
+        "operationId": "read_outline_api_v1_courses__course_id__outline_get",
+        "parameters": [
+          {
+            "name": "course_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Course Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Read Outline Api V1 Courses  Course Id  Outline Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/questions/{question_id}/recategorize": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Recategorize Question",
+        "operationId": "recategorize_question_api_v1_admin_questions__question_id__recategorize_post",
+        "parameters": [
+          {
+            "name": "question_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Question Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Recategorize Question Api V1 Admin Questions  Question Id  Recategorize Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/questions/{question_id}/tags": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Create Manual Tag",
+        "operationId": "create_manual_tag_api_v1_admin_questions__question_id__tags_post",
+        "parameters": [
+          {
+            "name": "question_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Question Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualTagBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Create Manual Tag Api V1 Admin Questions  Question Id  Tags Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/jobs": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List Jobs",
+        "operationId": "list_jobs_api_v1_admin_jobs_get",
+        "parameters": [
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "title": "Response List Jobs Api V1 Admin Jobs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/jobs/{job_name}/trigger": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Trigger Job",
+        "operationId": "trigger_job_api_v1_admin_jobs__job_name__trigger_post",
+        "parameters": [
+          {
+            "name": "job_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Name"
+            }
+          },
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Trigger Job Api V1 Admin Jobs  Job Name  Trigger Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/status": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "System Status",
+        "operationId": "system_status_api_v1_admin_status_get",
+        "parameters": [
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response System Status Api V1 Admin Status Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/tags/{tag_id}": {
+      "delete": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Delete Tag",
+        "operationId": "delete_tag_api_v1_admin_tags__tag_id__delete",
+        "parameters": [
+          {
+            "name": "tag_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tag Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/attempts/{attempt_id}/notes": {
+      "get": {
+        "summary": "Get Notes",
+        "operationId": "get_notes_api_v1_attempts__attempt_id__notes_get",
+        "parameters": [
+          {
+            "name": "attempt_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Attempt Id"
+            }
+          },
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/NoteOut"
+                  },
+                  "title": "Response Get Notes Api V1 Attempts  Attempt Id  Notes Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Add Note",
+        "operationId": "add_note_api_v1_attempts__attempt_id__notes_post",
+        "parameters": [
+          {
+            "name": "attempt_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Attempt Id"
+            }
+          },
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoteIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/attempts/notes/{note_id}": {
+      "delete": {
+        "summary": "Remove Note",
+        "operationId": "remove_note_api_v1_attempts_notes__note_id__delete",
+        "parameters": [
+          {
+            "name": "note_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Note Id"
+            }
+          },
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tutor/questions/by-qid/{qid}": {
+      "get": {
+        "tags": [
+          "tutor"
+        ],
+        "summary": "Get Question By Qid",
+        "operationId": "get_question_by_qid_api_v1_tutor_questions_by_qid__qid__get",
+        "parameters": [
+          {
+            "name": "qid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Qid"
+            }
+          },
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Question By Qid Api V1 Tutor Questions By Qid  Qid  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tutor/questions/by-attempt-id/{attempt_id}": {
+      "get": {
+        "tags": [
+          "tutor"
+        ],
+        "summary": "Get Question By Attempt Id",
+        "operationId": "get_question_by_attempt_id_api_v1_tutor_questions_by_attempt_id__attempt_id__get",
+        "parameters": [
+          {
+            "name": "attempt_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Attempt Id"
+            }
+          },
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Question By Attempt Id Api V1 Tutor Questions By Attempt Id  Attempt Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tutor/captures/recent": {
+      "get": {
+        "tags": [
+          "tutor"
+        ],
+        "summary": "Get Recent Captures",
+        "operationId": "get_recent_captures_api_v1_tutor_captures_recent_get",
+        "parameters": [
+          {
+            "name": "n",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 5,
+              "title": "N"
+            }
+          },
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "title": "Response Get Recent Captures Api V1 Tutor Captures Recent Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tutor/sessions/latest": {
+      "get": {
+        "tags": [
+          "tutor"
+        ],
+        "summary": "Get Latest Session Id",
+        "operationId": "get_latest_session_id_api_v1_tutor_sessions_latest_get",
+        "parameters": [
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "title": "Response Get Latest Session Id Api V1 Tutor Sessions Latest Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tutor/sessions/recent": {
+      "get": {
+        "tags": [
+          "tutor"
+        ],
+        "summary": "Get Recent Sessions",
+        "operationId": "get_recent_sessions_api_v1_tutor_sessions_recent_get",
+        "parameters": [
+          {
+            "name": "n",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 5,
+              "title": "N"
+            }
+          },
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "title": "Response Get Recent Sessions Api V1 Tutor Sessions Recent Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tutor/sessions/{test_id}/summary": {
+      "get": {
+        "tags": [
+          "tutor"
+        ],
+        "summary": "Get Session Summary",
+        "operationId": "get_session_summary_api_v1_tutor_sessions__test_id__summary_get",
+        "parameters": [
+          {
+            "name": "test_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Test Id"
+            }
+          },
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Session Summary Api V1 Tutor Sessions  Test Id  Summary Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tutor/attempts/flagged": {
+      "get": {
+        "tags": [
+          "tutor"
+        ],
+        "summary": "Get Flagged Attempts",
+        "operationId": "get_flagged_attempts_api_v1_tutor_attempts_flagged_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "title": "Response Get Flagged Attempts Api V1 Tutor Attempts Flagged Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tutor/outline/nodes/search": {
+      "get": {
+        "tags": [
+          "tutor"
+        ],
+        "summary": "Search Outline Nodes",
+        "operationId": "search_outline_nodes_api_v1_tutor_outline_nodes_search_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "course",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Course"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "title": "Response Search Outline Nodes Api V1 Tutor Outline Nodes Search Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tutor/outline": {
+      "get": {
+        "tags": [
+          "tutor"
+        ],
+        "summary": "Get Outline Tree",
+        "operationId": "get_outline_tree_api_v1_tutor_outline_get",
+        "parameters": [
+          {
+            "name": "course",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Course"
+            }
+          },
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Outline Tree Api V1 Tutor Outline Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tutor/outline/nodes/{node_id}/subtree": {
+      "get": {
+        "tags": [
+          "tutor"
+        ],
+        "summary": "Get Node Subtree",
+        "operationId": "get_node_subtree_api_v1_tutor_outline_nodes__node_id__subtree_get",
+        "parameters": [
+          {
+            "name": "node_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Node Id"
+            }
+          },
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Node Subtree Api V1 Tutor Outline Nodes  Node Id  Subtree Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tutor/healthz": {
+      "get": {
+        "tags": [
+          "tutor"
+        ],
+        "summary": "Healthcheck",
+        "operationId": "healthcheck_api_v1_tutor_healthz_get",
+        "parameters": [
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Healthcheck Api V1 Tutor Healthz Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/pkm/discriminators": {
+      "post": {
+        "tags": [
+          "pkm"
+        ],
+        "summary": "Post Discriminator",
+        "operationId": "post_discriminator_api_v1_pkm_discriminators_post",
+        "parameters": [
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscriminatorIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscriminatorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/anki/sync": {
+      "post": {
+        "tags": [
+          "anki"
+        ],
+        "summary": "Sync Anki",
+        "description": "Trigger a one-off Anki deck sync against the configured deck.",
+        "operationId": "sync_anki_api_v1_anki_sync_post",
+        "parameters": [
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Sync Anki Api V1 Anki Sync Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/anki/review-queue": {
+      "get": {
+        "tags": [
+          "anki"
+        ],
+        "summary": "Get Review Queue",
+        "operationId": "get_review_queue_api_v1_anki_review_queue_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AnkiCardOut"
+                  },
+                  "title": "Response Get Review Queue Api V1 Anki Review Queue Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/anki/cards/by-qid/{qid}": {
+      "get": {
+        "tags": [
+          "anki"
+        ],
+        "summary": "Get Cards For Qid",
+        "operationId": "get_cards_for_qid_api_v1_anki_cards_by_qid__qid__get",
+        "parameters": [
+          {
+            "name": "qid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Qid"
+            }
+          },
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AnkiCardOut"
+                  },
+                  "title": "Response Get Cards For Qid Api V1 Anki Cards By Qid  Qid  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/anki/assignments": {
+      "post": {
+        "tags": [
+          "anki"
+        ],
+        "summary": "Create Assignment Route",
+        "operationId": "create_assignment_route_api_v1_anki_assignments_post",
+        "parameters": [
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnkiAssignmentCreateIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnkiAssignmentOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "anki"
+        ],
+        "summary": "List Assignments Route",
+        "operationId": "list_assignments_route_api_v1_anki_assignments_get",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "window_days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 365,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Window Days"
+            }
+          },
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AnkiAssignmentOut"
+                  },
+                  "title": "Response List Assignments Route Api V1 Anki Assignments Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/anki/assignments/{assignment_id}": {
+      "patch": {
+        "tags": [
+          "anki"
+        ],
+        "summary": "Patch Assignment Route",
+        "operationId": "patch_assignment_route_api_v1_anki_assignments__assignment_id__patch",
+        "parameters": [
+          {
+            "name": "assignment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Assignment Id"
+            }
+          },
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnkiAssignmentPatchIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnkiAssignmentOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/anki/reviews": {
+      "post": {
+        "tags": [
+          "anki"
+        ],
+        "summary": "Create Review Route",
+        "operationId": "create_review_route_api_v1_anki_reviews_post",
+        "parameters": [
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnkiReviewCreateIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnkiReviewOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "anki"
+        ],
+        "summary": "List Reviews Route",
+        "operationId": "list_reviews_route_api_v1_anki_reviews_get",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "window_days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 365,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Window Days"
+            }
+          },
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AnkiReviewOut"
+                  },
+                  "title": "Response List Reviews Route Api V1 Anki Reviews Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/anki/load-config": {
+      "get": {
+        "tags": [
+          "anki"
+        ],
+        "summary": "Get Load Config Route",
+        "operationId": "get_load_config_route_api_v1_anki_load_config_get",
+        "parameters": [
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnkiLoadConfigOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "anki"
+        ],
+        "summary": "Upsert Load Config Route",
+        "operationId": "upsert_load_config_route_api_v1_anki_load_config_post",
+        "parameters": [
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnkiLoadConfigIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnkiLoadConfigOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/anki/load-adherence": {
+      "get": {
+        "tags": [
+          "anki"
+        ],
+        "summary": "Get Load Adherence Route",
+        "operationId": "get_load_adherence_route_api_v1_anki_load_adherence_get",
+        "parameters": [
+          {
+            "name": "window_days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 365,
+              "minimum": 1,
+              "default": 30,
+              "title": "Window Days"
+            }
+          },
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnkiLoadAdherenceOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/healthz": {
+      "get": {
+        "summary": "Health Check",
+        "operationId": "health_check_healthz_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/media/{file_path}": {
+      "get": {
+        "summary": "Serve",
+        "operationId": "serve_media__file_path__get",
+        "parameters": [
+          {
+            "name": "file_path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "File Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AnkiAssignmentCreateIn": {
+        "properties": {
+          "scope_kind": {
+            "type": "string",
+            "enum": [
+              "cc",
+              "topic"
+            ],
+            "title": "Scope Kind"
+          },
+          "scope_value": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Scope Value"
+          },
+          "scheduled_unlock_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Scheduled Unlock At"
+          },
+          "max_cards": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Cards"
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "most_specific_first",
+              "random",
+              "mature_first",
+              "young_first"
+            ],
+            "title": "Priority",
+            "default": "most_specific_first"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scope_kind",
+          "scope_value",
+          "scheduled_unlock_at"
+        ],
+        "title": "AnkiAssignmentCreateIn",
+        "description": "V52 create-assignment payload. `scope_value` is a topic_id (as str)\nor a CC code, matched by `scope_kind`."
+      },
+      "AnkiAssignmentOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "scope_kind": {
+            "type": "string",
+            "title": "Scope Kind"
+          },
+          "scope_value": {
+            "type": "string",
+            "title": "Scope Value"
+          },
+          "scheduled_unlock_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Scheduled Unlock At"
+          },
+          "actual_unlock_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Unlock At"
+          },
+          "card_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Card Ids"
+          },
+          "max_cards": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Cards"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "error_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Text"
+          },
+          "failure_count": {
+            "type": "integer",
+            "title": "Failure Count"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "scope_kind",
+          "scope_value",
+          "scheduled_unlock_at",
+          "actual_unlock_at",
+          "card_ids",
+          "max_cards",
+          "priority",
+          "status",
+          "error_text",
+          "failure_count",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AnkiAssignmentOut"
+      },
+      "AnkiAssignmentPatchIn": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "skipped",
+              "completed"
+            ],
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "AnkiAssignmentPatchIn",
+        "description": "V51 transition payload \u2014 only the two human-driven transitions\n(skipped, completed) live on this endpoint. unlock + auto-complete\nlive on their respective scheduler jobs (T63, T64)."
+      },
+      "AnkiCardOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "anki_card_id": {
+            "type": "integer",
+            "title": "Anki Card Id"
+          },
+          "deck_name": {
+            "type": "string",
+            "title": "Deck Name"
+          },
+          "note_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note Id"
+          },
+          "model_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Name"
+          },
+          "fields_json": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fields Json"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "interval_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interval Days"
+          },
+          "ease": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ease"
+          },
+          "lapses": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lapses"
+          },
+          "queue": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queue"
+          },
+          "sync_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Sync At"
+          },
+          "tags": {
+            "items": {
+              "$ref": "#/components/schemas/AnkiCardTagOut"
+            },
+            "type": "array",
+            "title": "Tags",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "anki_card_id",
+          "deck_name",
+          "sync_at"
+        ],
+        "title": "AnkiCardOut"
+      },
+      "AnkiCardTagOut": {
+        "properties": {
+          "tag_raw": {
+            "type": "string",
+            "title": "Tag Raw"
+          },
+          "parsed_kind": {
+            "type": "string",
+            "title": "Parsed Kind"
+          },
+          "topic_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topic Id"
+          },
+          "question_qid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Qid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tag_raw",
+          "parsed_kind"
+        ],
+        "title": "AnkiCardTagOut"
+      },
+      "AnkiLoadAdherenceOut": {
+        "properties": {
+          "window_days": {
+            "type": "integer",
+            "title": "Window Days"
+          },
+          "projected_daily_load": {
+            "type": "integer",
+            "title": "Projected Daily Load"
+          },
+          "projected_daily_minutes": {
+            "type": "number",
+            "title": "Projected Daily Minutes"
+          },
+          "daily_card_review_budget": {
+            "type": "integer",
+            "title": "Daily Card Review Budget"
+          },
+          "daily_minutes_budget": {
+            "type": "number",
+            "title": "Daily Minutes Budget"
+          },
+          "headroom_card_review_pct": {
+            "type": "number",
+            "title": "Headroom Card Review Pct"
+          },
+          "headroom_minutes_pct": {
+            "type": "number",
+            "title": "Headroom Minutes Pct"
+          },
+          "status_label": {
+            "type": "string",
+            "title": "Status Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "window_days",
+          "projected_daily_load",
+          "projected_daily_minutes",
+          "daily_card_review_budget",
+          "daily_minutes_budget",
+          "headroom_card_review_pct",
+          "headroom_minutes_pct",
+          "status_label"
+        ],
+        "title": "AnkiLoadAdherenceOut",
+        "description": "V54 deterministic adherence shape. \u22a5 a `recommended_changes`\nfield per V60 \u2014 advisory lives in the MCP host chat."
+      },
+      "AnkiLoadConfigIn": {
+        "properties": {
+          "daily_card_review_budget": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Daily Card Review Budget"
+          },
+          "daily_minutes_budget": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Daily Minutes Budget"
+          }
+        },
+        "type": "object",
+        "required": [
+          "daily_card_review_budget",
+          "daily_minutes_budget"
+        ],
+        "title": "AnkiLoadConfigIn",
+        "description": "V59 singleton upsert. Both budgets must be positive (mirrors the\nDB CHECK constraints + lets Pydantic short-circuit at the API layer\ninstead of bouncing through an IntegrityError)."
+      },
+      "AnkiLoadConfigOut": {
+        "properties": {
+          "daily_card_review_budget": {
+            "type": "integer",
+            "title": "Daily Card Review Budget"
+          },
+          "daily_minutes_budget": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Daily Minutes Budget"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "daily_card_review_budget",
+          "daily_minutes_budget",
+          "updated_at"
+        ],
+        "title": "AnkiLoadConfigOut"
+      },
+      "AnkiReviewCreateIn": {
+        "properties": {
+          "card_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Card Ids"
+          },
+          "review_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Review Date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "card_ids",
+          "review_date"
+        ],
+        "title": "AnkiReviewCreateIn",
+        "description": "V53 amended create-review payload. Reviews are standalone \u2014 no\nFK to assignments; deck name derived from the new row's own PK.\n`card_ids` carry AnKing-native ids (BIGINT) so AnkiConnect's\nfiltered-deck `cid:<csv>` query receives them verbatim."
+      },
+      "AnkiReviewOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "review_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Review Date"
+          },
+          "card_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Card Ids"
+          },
+          "deck_name": {
+            "type": "string",
+            "title": "Deck Name"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "error_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Text"
+          },
+          "failure_count": {
+            "type": "integer",
+            "title": "Failure Count"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "pushed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pushed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "review_date",
+          "card_ids",
+          "deck_name",
+          "status",
+          "error_text",
+          "failure_count",
+          "created_at",
+          "pushed_at"
+        ],
+        "title": "AnkiReviewOut"
+      },
+      "CapturePayload": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "title": "Source",
+            "default": "uworld"
+          },
+          "qid": {
+            "type": "string",
+            "title": "Qid"
+          },
+          "uworld_test_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uworld Test Id"
+          },
+          "captured_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Captured At"
+          },
+          "html": {
+            "type": "string",
+            "title": "Html"
+          },
+          "parsed": {
+            "$ref": "#/components/schemas/ParsedCapture"
+          },
+          "media": {
+            "items": {
+              "$ref": "#/components/schemas/MediaCapture"
+            },
+            "type": "array",
+            "title": "Media"
+          },
+          "parse_warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ParseWarning"
+            },
+            "type": "array",
+            "title": "Parse Warnings"
+          },
+          "extension_version": {
+            "type": "string",
+            "title": "Extension Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "qid",
+          "captured_at",
+          "html",
+          "parsed",
+          "extension_version"
+        ],
+        "title": "CapturePayload"
+      },
+      "ChoiceItem": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "html": {
+            "type": "string",
+            "title": "Html"
+          },
+          "plain": {
+            "type": "string",
+            "title": "Plain"
+          },
+          "media_content_hashes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Media Content Hashes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "html",
+          "plain"
+        ],
+        "title": "ChoiceItem"
+      },
+      "CreateCourseBody": {
+        "properties": {
+          "slug": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Slug"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "slug",
+          "name"
+        ],
+        "title": "CreateCourseBody"
+      },
+      "DiscriminatorIn": {
+        "properties": {
+          "question_id": {
+            "type": "integer",
+            "title": "Question Id"
+          },
+          "factor_text": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Factor Text"
+          },
+          "node_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "question_id",
+          "factor_text"
+        ],
+        "title": "DiscriminatorIn",
+        "description": "Persist-only write payload (V-M1): data fields only, no verdict /\ngrade / heuristic. The host reasons; this seam persists."
+      },
+      "DiscriminatorOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "question_id": {
+            "type": "integer",
+            "title": "Question Id"
+          },
+          "factor_text": {
+            "type": "string",
+            "title": "Factor Text"
+          },
+          "node_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Id"
+          },
+          "notion_block_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notion Block Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "question_id",
+          "factor_text",
+          "node_id",
+          "notion_block_id",
+          "created_at"
+        ],
+        "title": "DiscriminatorOut"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "IngestResponse": {
+        "properties": {
+          "capture_id": {
+            "type": "integer",
+            "title": "Capture Id"
+          },
+          "question_id": {
+            "type": "integer",
+            "title": "Question Id"
+          },
+          "attempt_id": {
+            "type": "integer",
+            "title": "Attempt Id"
+          },
+          "passage_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passage Id"
+          },
+          "media_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Media Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "capture_id",
+          "question_id",
+          "attempt_id"
+        ],
+        "title": "IngestResponse"
+      },
+      "ManualTagBody": {
+        "properties": {
+          "topic_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topic Id"
+          },
+          "content_category_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Category Id"
+          },
+          "skill": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill"
+          }
+        },
+        "type": "object",
+        "title": "ManualTagBody"
+      },
+      "MediaCapture": {
+        "properties": {
+          "content_hash": {
+            "type": "string",
+            "title": "Content Hash"
+          },
+          "mime_type": {
+            "type": "string",
+            "title": "Mime Type"
+          },
+          "bytes_b64": {
+            "type": "string",
+            "title": "Bytes B64"
+          },
+          "original_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Url"
+          },
+          "width_px": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width Px"
+          },
+          "height_px": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height Px"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "content_hash",
+          "mime_type",
+          "bytes_b64"
+        ],
+        "title": "MediaCapture"
+      },
+      "NoteIn": {
+        "properties": {
+          "note_text": {
+            "type": "string",
+            "title": "Note Text"
+          },
+          "flag_for_review": {
+            "type": "boolean",
+            "title": "Flag For Review",
+            "default": false
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "user",
+              "mcp"
+            ],
+            "title": "Source",
+            "default": "user"
+          }
+        },
+        "type": "object",
+        "required": [
+          "note_text"
+        ],
+        "title": "NoteIn"
+      },
+      "NoteOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "attempt_id": {
+            "type": "integer",
+            "title": "Attempt Id"
+          },
+          "note_text": {
+            "type": "string",
+            "title": "Note Text"
+          },
+          "flag_for_review": {
+            "type": "boolean",
+            "title": "Flag For Review"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "attempt_id",
+          "note_text",
+          "flag_for_review",
+          "source",
+          "created_at"
+        ],
+        "title": "NoteOut"
+      },
+      "ParseWarning": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "selector": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selector"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ParseWarning"
+      },
+      "ParsedCapture": {
+        "properties": {
+          "passage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PassageCapture"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stem_html": {
+            "type": "string",
+            "title": "Stem Html"
+          },
+          "stem_plain": {
+            "type": "string",
+            "title": "Stem Plain"
+          },
+          "choices": {
+            "items": {
+              "$ref": "#/components/schemas/ChoiceItem"
+            },
+            "type": "array",
+            "title": "Choices"
+          },
+          "correct_choice": {
+            "type": "string",
+            "title": "Correct Choice"
+          },
+          "explanation_html": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explanation Html"
+          },
+          "explanation_plain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explanation Plain"
+          },
+          "uworld_aamc_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Uworld Aamc Tags"
+          },
+          "selected_choice": {
+            "type": "string",
+            "title": "Selected Choice"
+          },
+          "is_correct": {
+            "type": "boolean",
+            "title": "Is Correct"
+          },
+          "time_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Seconds"
+          },
+          "flagged": {
+            "type": "boolean",
+            "title": "Flagged",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "stem_html",
+          "stem_plain",
+          "choices",
+          "correct_choice",
+          "selected_choice",
+          "is_correct"
+        ],
+        "title": "ParsedCapture"
+      },
+      "PassageCapture": {
+        "properties": {
+          "uworld_passage_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uworld Passage Id"
+          },
+          "html": {
+            "type": "string",
+            "title": "Html"
+          },
+          "plain": {
+            "type": "string",
+            "title": "Plain"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "html",
+          "plain"
+        ],
+        "title": "PassageCapture"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

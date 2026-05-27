@@ -74,6 +74,32 @@ async def test_create_course_duplicate_slug_returns_409(client: AsyncClient) -> 
     assert "already exists" in r2.json()["detail"]
 
 
+# ---------- GET /api/v1/courses ----------
+
+
+@pytest.mark.asyncio
+async def test_list_courses_empty_then_populated(client: AsyncClient) -> None:
+    # I.api: public courses-list seam the SPA picker consumes (V-D1).
+    r0 = await client.get("/api/v1/courses")
+    assert r0.status_code == 200
+    assert r0.json() == []
+
+    # Insert out of slug order to assert the endpoint sorts.
+    await client.post("/api/v1/courses", json={"slug": "zeta", "name": "Zeta"})
+    await client.post(
+        "/api/v1/courses", json={"slug": "alpha", "name": "Alpha", "description": "first"}
+    )
+
+    r = await client.get("/api/v1/courses")
+    assert r.status_code == 200
+    body = r.json()
+    assert [c["slug"] for c in body] == ["alpha", "zeta"]  # slug-ordered
+    alpha = body[0]
+    assert set(alpha) == {"id", "slug", "name", "description"}
+    assert alpha["name"] == "Alpha"
+    assert alpha["description"] == "first"
+
+
 # ---------- POST /api/v1/courses/{id}/outline:import ----------
 
 

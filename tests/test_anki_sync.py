@@ -96,7 +96,9 @@ def _note_data(*, note_id: int, tags: list[str]) -> dict[str, Any]:
 
 
 @pytest.fixture
-async def lookup(db_session: AsyncSession) -> OutlineLookup:
+async def lookup(db_session: AsyncSession, seed_aamc_outline) -> OutlineLookup:
+    # seed_aamc_outline (conftest) materializes the 'aamc' course first so
+    # OutlineLookup.load resolves instead of raising OutlineNotSeededError.
     return await OutlineLookup.load(db_session)
 
 

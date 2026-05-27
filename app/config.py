@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -5,10 +6,16 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _BACKEND_ROOT = Path(__file__).resolve().parent.parent
 
+# T40 / V-TC1: when GRADIENT_DISABLE_DOTENV is set (the test suite sets it at
+# tests/conftest.py import, before this module first loads), skip the real
+# .env so a developer's secrets/tokens never bleed into tests. Config then
+# comes from process env + field defaults only.
+_ENV_FILE = None if os.environ.get("GRADIENT_DISABLE_DOTENV") == "1" else _BACKEND_ROOT / ".env"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=_BACKEND_ROOT / ".env",
+        env_file=_ENV_FILE,
         env_file_encoding="utf-8",
         extra="ignore",
         # If a shell exports an env var as empty (e.g. Claude Code sets

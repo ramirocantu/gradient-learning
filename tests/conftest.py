@@ -1,4 +1,23 @@
 import os
+
+# T40 / V-TC1: isolate test config from a developer's .env BEFORE any
+# app.config import builds the `settings` singleton. GRADIENT_DISABLE_DOTENV
+# makes Settings skip its env_file (see app/config.py), so:
+#   - COACH_TOKEN falls back to its "change_me_before_use" default (the value
+#     the auth tests hardcode), instead of a real .env token → no spurious 401s;
+#   - NOTION_API_TOKEN / OPENAI_API_KEY stay unset → /admin/status probes report
+#     unconfigured and never hit a live API (V16);
+#   - DATABASE_URL is pinned to the test DB here (the field has no default).
+# Popping the others guards against a shell that exports them.
+os.environ["GRADIENT_DISABLE_DOTENV"] = "1"
+for _leak in ("COACH_TOKEN", "NOTION_API_TOKEN", "NOTION_WIKI_DB_ID", "OPENAI_API_KEY"):
+    os.environ.pop(_leak, None)
+_HOST_PORT = os.environ.get("HOST_POSTGRES_PORT", "5432")
+os.environ["DATABASE_URL"] = (
+    f"postgresql+asyncpg://gradient:gradient_secret@localhost:{_HOST_PORT}/gradient_test"
+)
+
+import json
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -18,9 +37,10 @@ from app.database import Base
 # New collect-ignores should re-introduce this list only when a
 # FENCED-but-undeletable surface appears.
 
-_HOST_PORT = os.environ.get("HOST_POSTGRES_PORT", "5432")
+# _HOST_PORT already resolved at module top (before the app imports above).
 TEST_DB_URL = f"postgresql+asyncpg://gradient:gradient_secret@localhost:{_HOST_PORT}/gradient_test"
 _ADMIN_DSN = f"postgresql://gradient:gradient_secret@localhost:{_HOST_PORT}/gradient"
+_AAMC_SEED_SCHEMA = Path(__file__).resolve().parent.parent / "app" / "seeds" / "aamc_outline.schema.json"
 
 
 @pytest.fixture(scope="session")
@@ -118,6 +138,26 @@ async def session(db_session: AsyncSession) -> AsyncSession:
     code should prefer ``db_session``. Both yield the same session.
     """
     return db_session
+
+
+@pytest.fixture
+async def seed_aamc_outline(db_session: AsyncSession):
+    """Materialize the bundled AAMC outline (course slug ``aamc``) into the
+    test DB so ``OutlineLookup.load`` resolves.
+
+    V-O6: this is the *explicit* validate→materialize import path (the same
+    one the upload route drives), invoked by a fixture — NOT a revived
+    implicit startup seed. Function-scoped + flushed into the per-test
+    savepoint, so it survives the subset-rebuild tests that DROP SCHEMA and
+    rolls back with the test like everything else.
+    """
+    from app.services.outline import materialize_outline, validate_outline_schema
+
+    payload = json.loads(_AAMC_SEED_SCHEMA.read_text())
+    validated = validate_outline_schema(payload)
+    await materialize_outline(db_session, validated)
+    await db_session.flush()
+    return validated
 
 
 @pytest.fixture

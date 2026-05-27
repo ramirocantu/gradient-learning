@@ -32,7 +32,7 @@ headroom into a chip:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy import func, select
@@ -55,9 +55,22 @@ _REVIEWS_WINDOW_DAYS: int = 14
 
 
 @dataclass(frozen=True, slots=True)
+class ReviewedDay:
+    """One point of the actual reviewed-count series (T43)."""
+
+    date: date
+    reviewed: int
+
+
+@dataclass(frozen=True, slots=True)
 class AnkiLoadAdherence:
     """V54 payload shape — note the absence of `recommended_changes`
-    per V60."""
+    per V60.
+
+    `reviewed_series` (T43, desktop ¶T6) is the actual per-day reviewed count
+    over the last `window_days`, dense (every day present, zero-filled) so the
+    load-adherence chart reads it directly ⊥ client-side sampling/bucketing.
+    A data series, not advisory — V60 (no `recommended_changes`) holds."""
 
     window_days: int
     projected_daily_load: int
@@ -67,6 +80,7 @@ class AnkiLoadAdherence:
     headroom_card_review_pct: float
     headroom_minutes_pct: float
     status_label: str  # 'feasible' | 'tight' | 'overload'
+    reviewed_series: tuple[ReviewedDay, ...]
 
 
 def _classify(headroom_card_pct: float, headroom_minutes_pct: float) -> str:
@@ -151,6 +165,32 @@ async def _upcoming_unlock_pressure(
     return total_cards / float(window_days) if window_days > 0 else 0.0
 
 
+async def _reviewed_series(
+    session: AsyncSession, *, now: datetime, window_days: int
+) -> tuple[ReviewedDay, ...]:
+    """Dense per-day reviewed count over the `window_days` ending on `now`'s
+    UTC date. Excludes `type='learn'` to match the projection cohort. Days
+    with no reviews are present with `reviewed=0` so the chart needs no
+    client-side gap filling."""
+    end_date = now.astimezone(timezone.utc).date()
+    start_date = end_date - timedelta(days=window_days - 1)
+    day_col = func.date(func.timezone("UTC", AnkiCardReview.reviewed_at))
+    rows = (
+        await session.execute(
+            select(day_col.label("d"), func.count())
+            .where(AnkiCardReview.reviewed_at >= datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc))
+            .where(AnkiCardReview.reviewed_at <= now)
+            .where(AnkiCardReview.type != "learn")
+            .group_by("d")
+        )
+    ).all()
+    counts: dict[date, int] = {r[0]: int(r[1]) for r in rows}
+    return tuple(
+        ReviewedDay(date=start_date + timedelta(days=i), reviewed=counts.get(start_date + timedelta(days=i), 0))
+        for i in range(window_days)
+    )
+
+
 async def compute_load_adherence(
     session: AsyncSession,
     *,
@@ -165,6 +205,7 @@ async def compute_load_adherence(
     base_per_day, mean_seconds = await _recent_review_stats(session, now=now)
     upcoming_per_day = await _upcoming_unlock_pressure(session, now=now, window_days=window_days)
     daily_card_review_budget, daily_minutes_budget = await _load_config(session)
+    reviewed_series = await _reviewed_series(session, now=now, window_days=window_days)
 
     projected_daily_load_f = base_per_day + upcoming_per_day
     projected_daily_minutes = projected_daily_load_f * mean_seconds / 60.0
@@ -182,10 +223,12 @@ async def compute_load_adherence(
         headroom_card_review_pct=headroom_card_pct,
         headroom_minutes_pct=headroom_minutes_pct,
         status_label=_classify(headroom_card_pct, headroom_minutes_pct),
+        reviewed_series=reviewed_series,
     )
 
 
 __all__ = [
     "AnkiLoadAdherence",
+    "ReviewedDay",
     "compute_load_adherence",
 ]

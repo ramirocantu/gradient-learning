@@ -131,6 +131,7 @@ async def test_payload_shape_matches_v54_and_v60(
         "headroom_card_review_pct",
         "headroom_minutes_pct",
         "status_label",
+        "reviewed_series",  # T43 data series (not advisory)
     }
     # V60: no recommended_changes anywhere in the payload.
     assert "recommended_changes" not in field_names
@@ -377,6 +378,48 @@ async def test_classify_uses_worse_axis(db_session: AsyncSession) -> None:
 
 
 # --- now override + window math ------------------------------------------ #
+
+
+# --- T43 reviewed_series ------------------------------------------------- #
+
+
+async def test_reviewed_series_is_dense_and_excludes_learn(
+    db_session: AsyncSession,
+) -> None:
+    """Dense per-day series over the window; zero-filled gaps; learn excluded."""
+    await _seed_config(db_session)
+    card = await _seed_card(db_session, native_id=1_900_010_001)
+    frozen_now = datetime(2026, 5, 27, 12, 0, tzinfo=timezone.utc)
+    # 2 real reviews today, 1 learn today (ignored), 1 real review 3d ago.
+    db_session.add_all(
+        [
+            AnkiCardReview(review_id=2_000_000_001, card_id=card.id,
+                           reviewed_at=frozen_now - timedelta(hours=1), ease=3, type="review"),
+            AnkiCardReview(review_id=2_000_000_002, card_id=card.id,
+                           reviewed_at=frozen_now - timedelta(hours=2), ease=2, type="review"),
+            AnkiCardReview(review_id=2_000_000_003, card_id=card.id,
+                           reviewed_at=frozen_now - timedelta(hours=3), ease=1, type="learn"),
+            AnkiCardReview(review_id=2_000_000_004, card_id=card.id,
+                           reviewed_at=frozen_now - timedelta(days=3, hours=1), ease=3, type="review"),
+        ]
+    )
+    await db_session.flush()
+
+    result = await compute_load_adherence(db_session, window_days=7, now=frozen_now)
+    series = result.reviewed_series
+    assert len(series) == 7
+    assert series[-1].date == frozen_now.date()  # last point is "today"
+    assert series[0].date == frozen_now.date() - timedelta(days=6)
+    by_date = {d.date: d.reviewed for d in series}
+    assert by_date[frozen_now.date()] == 2  # learn excluded
+    assert by_date[frozen_now.date() - timedelta(days=3)] == 1
+    assert by_date[frozen_now.date() - timedelta(days=1)] == 0  # dense zero-fill
+
+
+async def test_reviewed_series_length_tracks_window(db_session: AsyncSession) -> None:
+    await _seed_config(db_session)
+    r30 = await compute_load_adherence(db_session, window_days=30)
+    assert len(r30.reviewed_series) == 30
 
 
 async def test_now_override_relocates_review_window(

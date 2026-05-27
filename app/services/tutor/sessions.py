@@ -6,7 +6,8 @@ from sqlalchemy import case, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.attempt_note import AttemptNote
-from app.models.captures import Attempt, Question, QuestionTag  # noqa: F401 — kept for future port
+from app.models.captures import Attempt, Question, QuestionTag
+from app.services.tutor.outline import resolve_node_labels
 
 
 class SessionNotFoundError(Exception):
@@ -82,10 +83,45 @@ async def get_session_summary(session: AsyncSession, *, test_id: str) -> dict[st
     correct_total = int(summary.correct_count or 0)
     accuracy = (correct_total / attempts_total) if attempts_total else 0.0
 
-    # TODO(T14 follow-up): per-node session breakdown via QuestionTag.node_id +
-    # OutlineLookup.path_of for the topic_name. Returns empty until ported.
-    by_topic: list[dict[str, Any]] = []
-    top_topics: list[dict[str, Any]] = []
+    # T38 (V-O1, V-T1, V-O5): per-node breakdown. Each session attempt's
+    # question carries canonical node tags; a question tagged to N nodes counts
+    # in each (set membership rollup, V-O1 — ⊥ summed once). Non-overridden
+    # tags only. `by_topic` is sorted by node_id (deterministic); `top_topics`
+    # ranks by attempt volume (data ordering, ⊥ verdict — V-M1), capped at 5.
+    tag_rows = (
+        await session.execute(
+            select(QuestionTag.node_id, Attempt.is_correct)
+            .join(Attempt, Attempt.question_id == QuestionTag.question_id)
+            .where(Attempt.uworld_test_id == test_id)
+            .where(QuestionTag.is_overridden.is_(False))
+        )
+    ).all()
+    per_node: dict[int, dict[str, int]] = {}
+    for node_id, is_correct in tag_rows:
+        bucket = per_node.setdefault(node_id, {"attempt_count": 0, "correct_count": 0})
+        bucket["attempt_count"] += 1
+        if is_correct:
+            bucket["correct_count"] += 1
+
+    labels = await resolve_node_labels(session, per_node.keys())
+    by_topic = [
+        {
+            **labels[node_id],
+            "attempt_count": counts["attempt_count"],
+            "correct_count": counts["correct_count"],
+            "accuracy": (
+                counts["correct_count"] / counts["attempt_count"]
+                if counts["attempt_count"]
+                else 0.0
+            ),
+        }
+        for node_id, counts in sorted(per_node.items())
+        if node_id in labels
+    ]
+    top_topics = sorted(
+        by_topic,
+        key=lambda t: (-t["attempt_count"], t["node_id"]),
+    )[:5]
 
     flagged_rows = (
         await session.execute(

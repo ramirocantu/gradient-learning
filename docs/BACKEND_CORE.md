@@ -44,15 +44,28 @@ Auth column: 🔑 = `X-Coach-Token` required · 🌐 = open · 🏠 = localhost-
 |---|---|---|---|
 | GET | `/api/v1/tutor/questions/by-qid/{qid}` | 🔑 | Question detail + tags + features. |
 | GET | `/api/v1/tutor/questions/by-attempt-id/{attempt_id}` | 🔑 | Same, resolved via an attempt. |
-| GET | `/api/v1/tutor/captures/recent` | 🔑 | Recent captures (default 5, max 50). |
+| GET | `/api/v1/tutor/captures/recent` | 🔑 | Recent captures (default 5, max 50). Each row's `topics[]` = the question's resolved node tags (T38). |
 | GET | `/api/v1/tutor/sessions/latest` | 🔑 | Latest session `test_id`. |
 | GET | `/api/v1/tutor/sessions/recent` | 🔑 | Recent sessions (default 5, max 50). |
-| GET | `/api/v1/tutor/sessions/{test_id}/summary` | 🔑 | Session summary + attempt aggregates. |
+| GET | `/api/v1/tutor/sessions/{test_id}/summary` | 🔑 | Session summary + attempt aggregates + per-node breakdown (`by_topic`/`top_topics`, T38). |
 | GET | `/api/v1/tutor/attempts/flagged` | 🔑 | Flagged attempts (default 20, max 100). |
 | GET | `/api/v1/tutor/outline/nodes/search` | 🔑 | Search outline nodes (`q`, course slug, limit). |
 | GET | `/api/v1/tutor/outline` | 🔑 | Outline tree for a course slug. |
 | GET | `/api/v1/tutor/outline/nodes/{node_id}/subtree` | 🔑 | Subtree under a node (V-O1 set rollup). |
 | GET | `/api/v1/tutor/healthz` | 🔑 | Tutor health (incl. DB validation). |
+
+**Node-tag payload shapes (T38 — V-O1, V-T1, V-O5).** A question's canonical
+`QuestionTag.node_id`s (non-overridden) resolve to outline-node labels via
+`app/services/tutor/outline.py:resolve_node_labels`, which renders each
+node's full `>>`-joined path (cross-course safe; unknown ids dropped):
+
+- `captures/recent` → each row gains `topics: [{node_id, name, path, kind}]`,
+  deduped per question, ordered by `node_id`. Empty list when untagged.
+- `sessions/{test_id}/summary` → `by_topic: [{node_id, name, path, kind,
+  attempt_count, correct_count, accuracy}]`. A question tagged to N nodes
+  counts in each (set membership, V-O1 — ⊥ summed once); ordered by
+  `node_id`. `top_topics` = same rows ranked by `attempt_count` desc
+  (data ordering, ⊥ verdict — V-M1), capped at 5.
 
 ### PKM write-back — `app/api/v1/pkm.py`
 | Method | Path | Auth | Purpose |

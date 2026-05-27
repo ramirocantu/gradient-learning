@@ -391,8 +391,5 @@ async def test_native_id_without_anki_cards_row_stalls(
 
 def test_run_anki_assignment_complete_in_valid_jobs() -> None:
     from app.api.v1.admin import _VALID_JOBS
-    from app.web.dashboard.routes.admin import _JOB_DISPLAY, _JOBS
 
     assert "run_anki_assignment_complete" in _VALID_JOBS
-    assert "run_anki_assignment_complete" in _JOBS
-    assert "run_anki_assignment_complete" in _JOB_DISPLAY

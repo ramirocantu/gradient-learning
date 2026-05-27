@@ -59,11 +59,11 @@ async def test_engine(test_media_root):
 
 @pytest.fixture(scope="session")
 async def seeded_report(test_engine):
-    from scripts.seed_outline import seed
-
-    async with AsyncSession(test_engine) as session:
-        report = await seed(session)
-    return report
+    # No-op: outline seeding is not a startup/seed step (V-O6). The AAMC
+    # outline is an uploaded schema materialized via
+    # POST /api/v1/courses/{id}/outline:import. Kept as a session-scoped
+    # fixture so existing dependents order after `test_engine`.
+    return None
 
 
 @pytest.fixture
@@ -122,23 +122,15 @@ async def session(db_session: AsyncSession) -> AsyncSession:
 
 @pytest.fixture
 async def client(_test_connection) -> AsyncIterator[AsyncClient]:
-    """Unified HTTP client targeting ``backend/app/main.py:app``.
+    """Unified HTTP client targeting ``app/main.py:app``.
 
-    Routes through the real mount paths:
-      - dashboard tests hit ``/``
-      - viewer tests hit ``/viewer/*``
-      - API tests hit ``/api/v1/*``
-
-    Overrides ``get_session`` on the parent app and on both sub-apps to
-    bind to the per-test connection — so commits inside route handlers
+    The app is backend-only — every route lives on the main app
+    (``/api/v1/*``, ``/healthz``, ``/media/*``). Overrides ``get_session``
+    to bind to the per-test connection — so commits inside route handlers
     become savepoint releases and roll back with the outer transaction.
     """
     from app.api.deps import get_session as api_get_session
     from app.main import app
-    from app.web.dashboard.db import get_session as dashboard_get_session
-    from app.web.dashboard.main import app as dashboard_app
-    from app.web.viewer.db import get_session as viewer_get_session
-    from app.web.viewer.main import app as viewer_app
 
     Sm = async_sessionmaker(
         bind=_test_connection,
@@ -162,8 +154,6 @@ async def client(_test_connection) -> AsyncIterator[AsyncClient]:
                 raise
 
     app.dependency_overrides[api_get_session] = override_get_session
-    dashboard_app.dependency_overrides[dashboard_get_session] = override_get_session
-    viewer_app.dependency_overrides[viewer_get_session] = override_get_session
 
     try:
         transport = ASGITransport(app=app)
@@ -171,5 +161,3 @@ async def client(_test_connection) -> AsyncIterator[AsyncClient]:
             yield c
     finally:
         app.dependency_overrides.pop(api_get_session, None)
-        dashboard_app.dependency_overrides.pop(dashboard_get_session, None)
-        viewer_app.dependency_overrides.pop(viewer_get_session, None)

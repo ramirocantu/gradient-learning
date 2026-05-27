@@ -1,14 +1,19 @@
 # Gradient
 
-A single-user, multi-domain study system. FastAPI + Postgres backend, JSON
-API at `/api/v1/*`, dashboard view layer (Jinja today; React+Tailwind SPA
-in P1). Forked from the `mcat-coach` PoC and rescoped to a generalized
-course-builder: import an outline schema per course (AAMC is one example),
-link captured questions / Anki cards / lecture-PDF atomic facts to nodes
-in that tree, draft a Notion wiki out of it.
+A single-user, multi-domain study system. **Backend-only**: a FastAPI +
+Postgres service exposing a JSON API at `/api/v1/*` (plus `/media/*` for
+assets and an MCP tutor seam). It ships no view layer — clients (a native
+macOS app, the Chrome capture extension, and the MCP host) are external and
+consume the HTTP contract. Forked from the `mcat-coach` PoC and rescoped to a
+generalized course-builder: import an outline schema per course (AAMC is one
+example), link captured questions / Anki cards / lecture-PDF atomic facts to
+nodes in that tree, draft a Notion wiki out of it.
 
 `SPEC.md` is the source of truth — read that for the canonical goal,
-architecture, invariants, and task list. This README covers local setup.
+architecture, invariants, and task list. `docs/BACKEND_CORE.md` catalogs the
+API surface, MCP seam, and reusable services a client builds against
+(`docs/openapi.json` is the machine-readable contract). This README covers
+local setup.
 
 ## Requirements
 
@@ -97,7 +102,8 @@ pytest
 │   ├── schemas/          # Pydantic schemas
 │   ├── services/         # business logic (categorizer, anki, analyzer, …)
 │   ├── seeds/            # bundled schema files (AAMC outline reference)
-│   └── web/dashboard/    # Jinja view layer (replaced by SPA in P1)
+│   └── web/media.py      # /media/* asset file-server (no view layer)
+├── docs/                 # BACKEND_CORE.md + generated openapi.json
 ├── scripts/              # one-shot CLIs (e.g. the V-L2 gate runner)
 └── tests/                # pytest suite + fixtures
 ```

@@ -2,7 +2,7 @@
 # WorktreeCreate hook for gradient-server.
 #
 # Replaces Claude Code's default git worktree creation to:
-#   1. Use feature/<name> branch naming from origin/dev (gitflow).
+#   1. Branch <name> off MAIN's current local HEAD.
 #   2. Copy files listed in .worktreeinclude (gitignored locals: .env, data/, ...).
 #   3. Create a per-worktree Postgres database (gradient_<slug>) in MAIN's
 #      docker-compose postgres container — no extra container per worktree.
@@ -18,7 +18,6 @@ set -euo pipefail
 PG_SERVICE="postgres"
 PG_USER="gradient"
 PG_PASSWORD_VAR="gradient_secret"
-DEFAULT_BASE_BRANCH="dev"
 
 log() { printf '[wt-create] %s\n' "$*" >&2; }
 die() { log "ERROR: $*"; exit 1; }
@@ -61,24 +60,12 @@ if ! (cd "$MAIN" && git check-ignore -q .claude/worktrees 2>/dev/null); then
 fi
 
 # --- Determine base branch ---
-# Prefer DEFAULT_BASE_BRANCH (dev) over origin/HEAD, which points at main.
-# Resolve to a concrete start-point ref, preferring origin/<branch> when it
-# exists, else the local branch (origin/dev is not always pushed).
-BASE_BRANCH=""
-BASE_REF=""
-for candidate in "$DEFAULT_BASE_BRANCH" main master; do
-  if (cd "$MAIN" && git show-ref --verify --quiet "refs/remotes/origin/$candidate" 2>/dev/null); then
-    BASE_BRANCH="$candidate"
-    BASE_REF="origin/$candidate"
-    break
-  elif (cd "$MAIN" && git show-ref --verify --quiet "refs/heads/$candidate" 2>/dev/null); then
-    BASE_BRANCH="$candidate"
-    BASE_REF="$candidate"
-    break
-  fi
-done
-BASE_BRANCH="${BASE_BRANCH:-$DEFAULT_BASE_BRANCH}"
-BASE_REF="${BASE_REF:-$DEFAULT_BASE_BRANCH}"
+# Fork from whatever MAIN has checked out right now (its local HEAD), so a
+# worktree inherits the branch you're sitting on rather than a fixed default.
+# --abbrev-ref returns the current branch name; on a detached HEAD it returns
+# "HEAD", which is still a valid start-point for `git worktree add`.
+BASE_REF="$(cd "$MAIN" && git rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)"
+BASE_BRANCH="$BASE_REF"
 
 # --- Create worktree ---
 mkdir -p "$(dirname "$WT_DIR")"
@@ -102,6 +89,15 @@ if (cd "$MAIN" && git show-ref --verify --quiet "refs/heads/$BRANCH_NAME" 2>/dev
 else
   log "creating branch $BRANCH_NAME from $BASE_REF"
   (cd "$MAIN" && git worktree add -b "$BRANCH_NAME" "$WT_DIR" "$BASE_REF") >&2
+fi
+
+# --- Init submodules ---
+# New worktrees share .git with MAIN but get empty submodule working trees.
+# Populate them (docs/wiki) so the worktree is complete.
+if [ -f "$WT_DIR/.gitmodules" ]; then
+  log "git submodule update --init --recursive"
+  (cd "$WT_DIR" && git submodule update --init --recursive) >&2 \
+    || log "WARN: submodule update failed (continuing)"
 fi
 
 # --- Copy .worktreeinclude files ---

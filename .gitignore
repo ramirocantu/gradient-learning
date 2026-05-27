@@ -54,6 +54,7 @@ data/
 .venv
 .claude/worktrees/
 .junie/
+*.diff
 
 # Local editor / tooling caches
 .codegraph/

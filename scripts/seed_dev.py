@@ -98,7 +98,9 @@ QUESTIONS = [
     },
 ]
 
-SESSIONS = ["Bio-Sys 14", "Mixed 042", "Bio-Sys 13"]
+# (test_id, days_ago) — each session is one day; its attempts cluster in a
+# tight window that day so session wall-clock stays realistic.
+SESSIONS = [("Bio-Sys 14", 0), ("Mixed 042", 1), ("Bio-Sys 13", 2)]
 
 
 def _choices_json(letters_to_text: list[str]) -> list[dict]:
@@ -223,11 +225,14 @@ async def seed(session: AsyncSession, course_slug: str) -> None:
             )
             made_t += 1
 
-        # 1–3 attempts across recent days/sessions; latest drives "recent sessions"
+        # 1–3 attempts, each in a different session/day (→ attempt history spans
+        # dates). Within a session, attempts cluster in a ~50-min window that day
+        # so the session's first→last wall-clock is realistic.
         n_attempts = rng.choice([1, 2, 3])
         for ai in range(n_attempts):
-            days_ago = rng.randint(0, 6)
-            attempted = now - timedelta(days=days_ago, minutes=rng.randint(0, 600))
+            test_id, days_ago = SESSIONS[(qi + ai) % len(SESSIONS)]
+            day = (now - timedelta(days=days_ago)).replace(hour=9, minute=40, second=0, microsecond=0)
+            attempted = day + timedelta(minutes=rng.randint(0, 50))
             # later attempts trend correct (learning); first attempt often the common-wrong
             correct = ai == n_attempts - 1 and rng.random() > 0.35
             picked = qd["correct"] if correct else qd["common_wrong"]
@@ -240,7 +245,7 @@ async def seed(session: AsyncSession, course_slug: str) -> None:
                 is_correct=correct,
                 time_seconds=rng.randint(45, 180),
                 flagged=flagged,
-                uworld_test_id=SESSIONS[(qi + ai) % len(SESSIONS)],
+                uworld_test_id=test_id,
             )
             session.add(attempt)
             await session.flush()

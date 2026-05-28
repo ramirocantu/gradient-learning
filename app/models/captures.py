@@ -103,7 +103,10 @@ class Question(Base):
     stem_html: Mapped[str] = mapped_column(Text, nullable=False)
     stem_plain: Mapped[str] = mapped_column(Text, nullable=False)
     choices: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
-    correct_choice: Mapped[str] = mapped_column(Text, nullable=False)
+    # Nullable (V-CAP1): a deferred-answer capture source may record a question
+    # before its correct answer is known; NULL = answer pending. Extension /
+    # uworld / manual adapters still always supply it on capture.
+    correct_choice: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     explanation_html: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     explanation_plain: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     uworld_aamc_tags: Mapped[Optional[list[str]]] = mapped_column(JSONB, nullable=True)

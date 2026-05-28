@@ -3,7 +3,7 @@
 A source adapter normalizes a raw `capture → {Question, Attempt}` and is keyed
 by its `source` discriminator. `/api/v1/captures` dispatches by `payload.source`
 through `get_adapter`. UWorld is the reference adapter; new sources (web-Qbank,
-manual, pdf-qset) register here without touching the ingest entrypoint.
+manual) register here without touching the ingest entrypoint.
 """
 
 from __future__ import annotations
@@ -59,6 +59,6 @@ from app.services.adapters import uworld as _uworld  # noqa: E402,F401
 from app.services.adapters import web_qbank as _web_qbank  # noqa: E402,F401
 from app.services.adapters import manual as _manual  # noqa: E402,F401
 
-# pdf-qset adapter deferred (T33 "hardest, last"): a PDF question set needs a
-# file-upload payload + a multi-question (no-Attempt) response shape, distinct
-# from the single-capture CapturePayload above. Register it here once built.
+# pdf-qset adapter CUT (T37, 2026-05-28): PDF question-set import abandoned —
+# backend does notes-only PDF ingress (kb/pdf_ingest → atomic_facts). Practice
+# questions arrive via the capture adapters above (with Attempts). See SPEC §T37.

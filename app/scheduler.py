@@ -21,6 +21,7 @@ from app.services.anki.review import run_review_due
 from app.services.anki.client import AnkiConnectClient
 from app.services.anki.sync import sync_deck
 from app.services.kb.inbox import poll_inbox
+from app.services.kb.jobs import embed_pending, tag_pending
 from app.services.kb.notion import sync_pending_nodes
 from app.services.llm.client import build_openai_client
 
@@ -547,6 +548,194 @@ async def run_notion_sync_job() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Embedding job (T50, V-E1, V41)
+# --------------------------------------------------------------------------- #
+
+
+async def _do_run_embed() -> None:
+    """Embed un-embedded outline_nodes / atomic_facts / questions (V-E1).
+
+    No-op (``succeeded``) without an OpenAI key. V41: ``embed_pending``
+    isolates per-item failures so the run still commits + succeeds (partial).
+    Outline-node vectors are the recall candidate index, so this gates
+    tagging — it runs on a slightly tighter interval than the tag job.
+    """
+    run_id: int | None = None
+    try:
+        async with AsyncSessionLocal() as session:
+            row = TaskRun(
+                job_name="run_embed",
+                started_at=datetime.now(timezone.utc),
+                status=TaskRunStatus.running,
+                items_processed=0,
+            )
+            session.add(row)
+            await session.flush()
+            run_id = row.id
+            await session.commit()
+
+        if not settings.OPENAI_API_KEY:
+            async with AsyncSessionLocal() as session:
+                run_row = await session.get(TaskRun, run_id)
+                if run_row is not None:
+                    run_row.status = TaskRunStatus.succeeded
+                    run_row.error_text = "openai unconfigured — embed skipped"
+                    run_row.finished_at = datetime.now(timezone.utc)
+                await session.commit()
+            logger.info("run_embed: OPENAI_API_KEY unset; skipping")
+            return
+
+        client = build_openai_client()
+        async with AsyncSessionLocal() as session:
+            report = await embed_pending(session, openai_client=client)
+            await session.commit()
+
+        async with AsyncSessionLocal() as session:
+            run_row = await session.get(TaskRun, run_id)
+            if run_row is not None:
+                run_row.status = TaskRunStatus.succeeded
+                run_row.items_processed = report.embedded
+                if report.failures:
+                    run_row.error_text = (
+                        f"embedded={report.embedded} reused={report.reused} "
+                        f"failures={len(report.failures)}"
+                    )[:2000]
+                run_row.finished_at = datetime.now(timezone.utc)
+            await session.commit()
+
+        logger.info(
+            "run_embed finished: embedded=%d reused=%d failures=%d",
+            report.embedded,
+            report.reused,
+            len(report.failures),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("run_embed failed: %s", exc)
+        if run_id is not None:
+            try:
+                async with AsyncSessionLocal() as session:
+                    run_row = await session.get(TaskRun, run_id)
+                    if run_row is not None:
+                        run_row.status = TaskRunStatus.failed
+                        run_row.error_text = str(exc)[:2000]
+                        run_row.finished_at = datetime.now(timezone.utc)
+                    await session.commit()
+            except Exception:  # noqa: BLE001
+                logger.exception("failed to record embed failure in task_runs")
+
+
+async def run_embed_job() -> None:
+    async with _lock:
+        if "run_embed" in _inflight:
+            logger.warning("run_embed already in-flight, skipping")
+            return
+        _inflight.add("run_embed")
+    try:
+        await _do_run_embed()
+    finally:
+        async with _lock:
+            _inflight.discard("run_embed")
+
+
+# --------------------------------------------------------------------------- #
+# Grounded-tag job — the categorizer (T50, V-L3, V69, V-T2/V-T3, V41)
+# --------------------------------------------------------------------------- #
+
+
+async def _do_run_grounded_tag() -> None:
+    """Categorize untagged atomic_facts + single-course questions (V-L3).
+
+    Recall → grounded pick → inline V69 calibration → persist
+    (``atomic_facts.node_id`` denormalized for the notion + read paths). No-op
+    (``succeeded``) without an OpenAI key; empty until embeddings exist
+    (recall returns no candidates → grounded no-ops). V41: per-entity failures
+    isolated; run still succeeds (partial).
+    """
+    run_id: int | None = None
+    try:
+        async with AsyncSessionLocal() as session:
+            row = TaskRun(
+                job_name="run_grounded_tag",
+                started_at=datetime.now(timezone.utc),
+                status=TaskRunStatus.running,
+                items_processed=0,
+            )
+            session.add(row)
+            await session.flush()
+            run_id = row.id
+            await session.commit()
+
+        if not settings.OPENAI_API_KEY:
+            async with AsyncSessionLocal() as session:
+                run_row = await session.get(TaskRun, run_id)
+                if run_row is not None:
+                    run_row.status = TaskRunStatus.succeeded
+                    run_row.error_text = "openai unconfigured — grounded tag skipped"
+                    run_row.finished_at = datetime.now(timezone.utc)
+                await session.commit()
+            logger.info("run_grounded_tag: OPENAI_API_KEY unset; skipping")
+            return
+
+        client = build_openai_client()
+        async with AsyncSessionLocal() as session:
+            report = await tag_pending(
+                session, tagging_client=client, calibrator_client=client
+            )
+            await session.commit()
+
+        async with AsyncSessionLocal() as session:
+            run_row = await session.get(TaskRun, run_id)
+            if run_row is not None:
+                run_row.status = TaskRunStatus.succeeded
+                run_row.items_processed = report.facts_tagged + report.questions_tagged
+                notes = (
+                    f"facts={report.facts_tagged} q={report.questions_tagged} "
+                    f"tags={report.tags_persisted} flagged={report.manual_review_flagged} "
+                    f"no_emb={report.facts_skipped_no_embedding} "
+                    f"q_skipped={report.questions_skipped} failures={len(report.failures)}"
+                )
+                if report.failures or report.facts_skipped_no_embedding or report.questions_skipped:
+                    run_row.error_text = notes[:2000]
+                run_row.finished_at = datetime.now(timezone.utc)
+            await session.commit()
+
+        logger.info(
+            "run_grounded_tag finished: facts=%d q=%d tags=%d flagged=%d failures=%d",
+            report.facts_tagged,
+            report.questions_tagged,
+            report.tags_persisted,
+            report.manual_review_flagged,
+            len(report.failures),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("run_grounded_tag failed: %s", exc)
+        if run_id is not None:
+            try:
+                async with AsyncSessionLocal() as session:
+                    run_row = await session.get(TaskRun, run_id)
+                    if run_row is not None:
+                        run_row.status = TaskRunStatus.failed
+                        run_row.error_text = str(exc)[:2000]
+                        run_row.finished_at = datetime.now(timezone.utc)
+                    await session.commit()
+            except Exception:  # noqa: BLE001
+                logger.exception("failed to record grounded_tag failure in task_runs")
+
+
+async def run_grounded_tag_job() -> None:
+    async with _lock:
+        if "run_grounded_tag" in _inflight:
+            logger.warning("run_grounded_tag already in-flight, skipping")
+            return
+        _inflight.add("run_grounded_tag")
+    try:
+        await _do_run_grounded_tag()
+    finally:
+        async with _lock:
+            _inflight.discard("run_grounded_tag")
+
+
+# --------------------------------------------------------------------------- #
 # Scheduler lifecycle
 # --------------------------------------------------------------------------- #
 
@@ -595,6 +784,20 @@ def start_scheduler() -> None:
         "interval",
         minutes=settings.NOTION_SYNC_INTERVAL_MINUTES,
         id="run_notion_sync",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        run_embed_job,
+        "interval",
+        minutes=settings.EMBED_INTERVAL_MINUTES,
+        id="run_embed",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        run_grounded_tag_job,
+        "interval",
+        minutes=settings.GROUNDED_TAG_INTERVAL_MINUTES,
+        id="run_grounded_tag",
         replace_existing=True,
     )
     scheduler.start()

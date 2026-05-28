@@ -138,7 +138,8 @@ async def test_list_jobs_endpoint():
 
 
 def test_kb_jobs_registered_on_start():
-    """start_scheduler wires the PDF-ingest + Notion-sync interval jobs (T51)."""
+    """start_scheduler wires the KB interval jobs: PDF-ingest + Notion-sync
+    (T51) and embed + grounded-tag (T50)."""
     import app.scheduler as sched_mod
 
     added: list[str] = []
@@ -154,3 +155,5 @@ def test_kb_jobs_registered_on_start():
 
     assert "run_pdf_ingest" in added
     assert "run_notion_sync" in added
+    assert "run_embed" in added
+    assert "run_grounded_tag" in added

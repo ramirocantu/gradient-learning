@@ -95,6 +95,11 @@ class Settings(BaseSettings):
     PDF_INGEST_INTERVAL_MINUTES: int = 30
     NOTION_SYNC_INTERVAL_MINUTES: int = 60
 
+    # T50 LLM4Tag cadence. Embedding gates tagging (recall needs node vectors),
+    # so it runs slightly ahead. Both no-op without an OpenAI key.
+    EMBED_INTERVAL_MINUTES: int = 15
+    GROUNDED_TAG_INTERVAL_MINUTES: int = 20
+
 
 settings = Settings()
 

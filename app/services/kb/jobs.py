@@ -275,11 +275,13 @@ async def tag_pending(
     calibrator_client: Any | None = None,
     version: str | None = None,
 ) -> TagReport:
-    """Tag untagged atomic_facts + (single-course) needs_categorization
-    questions (V-L3, V69). Atomic facts always carry their ``course_id``;
-    questions are only tagged when exactly one course exists (recall needs a
-    course scope and a pre-tag question has no binding) — otherwise skipped
-    with a log. V41 isolates per-entity failures."""
+    """Tag untagged atomic_facts + needs_categorization questions (V-L3, V69).
+    Atomic facts always carry their ``course_id``. A question is scoped to its
+    OWN ``course_id`` (V-CAP2 — the capture adapter stamps it from the chosen
+    course), so multi-course installs tag normally. A question with no
+    ``course_id`` (legacy/unscoped) falls back to the sole course iff exactly
+    one exists, else is skipped (course ambiguous) with a log. V41 isolates
+    per-entity failures."""
 
     version = version or current_version()
     calibrator_client = calibrator_client or tagging_client
@@ -317,7 +319,9 @@ async def tag_pending(
         else:
             report.facts_skipped_no_embedding += 1
 
-    # --- questions: only when the course is unambiguous ---------------------
+    # --- questions: scope to the question's OWN course_id (V-CAP2). A question
+    # with no course_id (legacy/unscoped) falls back to the sole course iff
+    # exactly one exists, else is skipped (course ambiguous) -----------------
     questions = (
         await session.execute(
             select(Question).where(Question.needs_categorization.is_(True))
@@ -327,36 +331,44 @@ async def tag_pending(
         course_count = (
             await session.execute(select(func.count()).select_from(Course))
         ).scalar_one()
+        fallback_course_id: int | None = None
         if course_count == 1:
-            course_id = (await session.execute(select(Course.id))).scalar_one()
-            for q in questions:
-                try:
-                    ran = await _tag_one(
-                        session,
-                        entity_kind=QUESTION,
-                        entity_id=q.id,
-                        course_id=course_id,
-                        entity_text=q.stem_plain,
-                        version=version,
-                        tagging_client=tagging_client,
-                        calibrator_client=calibrator_client,
-                        report=report,
-                    )
-                except Exception as exc:  # noqa: BLE001 — V41
-                    report.failures.append(f"question:{q.id}: {exc}")
-                    _logger.warning("tag_pending: question %s failed: %s", q.id, exc)
-                    continue
-                if ran:
-                    q.needs_categorization = False
-                    report.questions_tagged += 1
-                else:
-                    report.questions_skipped += 1
-            await session.flush()
-        else:
-            report.questions_skipped += len(questions)
+            fallback_course_id = (await session.execute(select(Course.id))).scalar_one()
+
+        ambiguous_skipped = 0
+        for q in questions:
+            course_id = q.course_id if q.course_id is not None else fallback_course_id
+            if course_id is None:
+                report.questions_skipped += 1
+                ambiguous_skipped += 1
+                continue
+            try:
+                ran = await _tag_one(
+                    session,
+                    entity_kind=QUESTION,
+                    entity_id=q.id,
+                    course_id=course_id,
+                    entity_text=q.stem_plain,
+                    version=version,
+                    tagging_client=tagging_client,
+                    calibrator_client=calibrator_client,
+                    report=report,
+                )
+            except Exception as exc:  # noqa: BLE001 — V41
+                report.failures.append(f"question:{q.id}: {exc}")
+                _logger.warning("tag_pending: question %s failed: %s", q.id, exc)
+                continue
+            if ran:
+                q.needs_categorization = False
+                report.questions_tagged += 1
+            else:
+                report.questions_skipped += 1
+        await session.flush()
+        if ambiguous_skipped:
             _logger.info(
-                "tag_pending: %d question(s) skipped — course ambiguous (%d courses)",
-                len(questions),
+                "tag_pending: %d unscoped question(s) skipped — course ambiguous "
+                "(%d courses, no course_id stamped)",
+                ambiguous_skipped,
                 course_count,
             )
 

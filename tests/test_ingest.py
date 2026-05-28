@@ -26,6 +26,7 @@ from app.config import settings
 from app.main import app
 from app.models.captures import Attempt, Passage, Question, RawCapture
 from app.models.media import Media
+from app.models.outline import Course
 
 
 _PNG_BYTES = bytes.fromhex(
@@ -612,3 +613,66 @@ async def test_attempts_uworld_test_id_index_exists(ingest_env):
             )
         ).all()
         assert len(rows) == 1, f"expected ix_attempts_uworld_test_id, got {rows!r}"
+
+
+# --------------------------------------------------------------------------- #
+# 17. Course-scoped capture (V-CAP2, T56)
+# --------------------------------------------------------------------------- #
+
+
+async def _make_course(make_session, slug: str) -> int:
+    async with make_session() as s:
+        c = Course(slug=slug, name=slug.upper())
+        s.add(c)
+        await s.flush()
+        cid = c.id
+        await s.commit()
+        return cid
+
+
+async def test_capture_course_slug_stamps_course_id(ingest_env):
+    """V-CAP2: course_slug resolves to course_id, stamped on Question + RawCapture."""
+    client, make_session, _ = ingest_env
+    slug = f"course-{uuid.uuid4().hex[:8]}"
+    course_id = await _make_course(make_session, slug)
+
+    payload = _base_payload()
+    payload["course_slug"] = slug
+    r = await client.post("/api/v1/captures", json=payload, headers=_auth_headers())
+    assert r.status_code == 200, r.text
+
+    async with make_session() as s:
+        question = (await s.execute(select(Question))).scalar_one()
+        capture = (await s.execute(select(RawCapture))).scalar_one()
+        assert question.course_id == course_id
+        assert capture.course_id == course_id
+
+
+async def test_capture_unknown_course_slug_422_persists_nothing(ingest_env):
+    """V-CAP2 / I.api: an unknown course_slug aborts ingest (422), nothing persisted."""
+    client, make_session, _ = ingest_env
+    payload = _base_payload()
+    payload["course_slug"] = f"nope-{uuid.uuid4().hex[:8]}"
+
+    r = await client.post("/api/v1/captures", json=payload, headers=_auth_headers())
+    assert r.status_code == 422, r.text
+
+    async with make_session() as s:
+        assert (await s.execute(select(RawCapture))).scalars().all() == []
+        assert (await s.execute(select(Question))).scalars().all() == []
+        assert (await s.execute(select(Attempt))).scalars().all() == []
+
+
+async def test_capture_without_course_slug_backcompat(ingest_env):
+    """V-CAP2: omitting course_slug stays valid (200) with course_id NULL."""
+    client, make_session, _ = ingest_env
+    payload = _base_payload()  # no course_slug key
+
+    r = await client.post("/api/v1/captures", json=payload, headers=_auth_headers())
+    assert r.status_code == 200, r.text
+
+    async with make_session() as s:
+        question = (await s.execute(select(Question))).scalar_one()
+        capture = (await s.execute(select(RawCapture))).scalar_one()
+        assert question.course_id is None
+        assert capture.course_id is None

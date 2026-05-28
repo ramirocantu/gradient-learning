@@ -100,10 +100,13 @@ async def _fact(session: AsyncSession, course_id: int, text: str) -> AtomicFact:
     return f
 
 
-async def _question(session: AsyncSession, stem: str) -> Question:
+async def _question(
+    session: AsyncSession, stem: str, course_id: int | None = None
+) -> Question:
     q = Question(
         source="manual",
         qid=f"q-{uuid.uuid4().hex[:10]}",
+        course_id=course_id,
         stem_html=f"<p>{stem}</p>",
         stem_plain=stem,
         choices=[{"key": "A", "html": "a", "plain": "a", "media_ids": []}],
@@ -288,6 +291,32 @@ async def test_tag_pending_skips_questions_when_course_ambiguous(db_session: Asy
         await db_session.execute(select(Question).where(Question.id == q.id))
     ).scalar_one()
     assert refreshed.needs_categorization is True  # untouched
+
+
+async def test_tag_pending_tags_course_stamped_question_with_multiple_courses(
+    db_session: AsyncSession,
+):
+    # V-CAP2: two courses exist (globally ambiguous), but the question carries
+    # its own course_id — recall scopes to it, so it tags rather than skips.
+    course_a = await _course(db_session)
+    await _course(db_session)  # second course → count > 1
+    node = await _node(db_session, course_a.id, "Glycolysis")
+    await _embed(db_session, "outline_node", node.id, _vec(0))
+    q = await _question(db_session, "What does glycolysis yield?", course_id=course_a.id)
+    await _embed(db_session, "question", q.id, _vec(0))
+
+    with patch(
+        "app.services.kb.jobs.generate_grounded_tags",
+        new=AsyncMock(return_value=_grounded(node.id)),
+    ):
+        report = await tag_pending(db_session, tagging_client=MagicMock())
+
+    assert report.questions_tagged == 1
+    assert report.questions_skipped == 0
+    refreshed = (
+        await db_session.execute(select(Question).where(Question.id == q.id))
+    ).scalar_one()
+    assert refreshed.needs_categorization is False
 
 
 async def test_tag_pending_isolates_per_entity_failure(db_session: AsyncSession):

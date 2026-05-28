@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.captures import Attempt, Passage, Question, RawCapture
 from app.models.media import Media
+from app.models.outline import Course
 from app.schemas.captures import (
     CapturePayload,
     ChoiceItem,
@@ -30,6 +31,7 @@ from app.schemas.captures import (
     MediaCapture,
     PassageCapture,
 )
+from app.services.adapters import UnknownCourseError
 from app.services.media_store import relative_media_path, write_media
 
 _NON_TAG_CHARS = re.compile(r"[^<>\s]")
@@ -181,6 +183,7 @@ async def _upsert_question(
     payload: CapturePayload,
     passage_id: int | None,
     resolved_choices: list[dict[str, Any]],
+    course_id: int | None,
 ) -> Question:
     parsed = payload.parsed
     existing = (
@@ -191,6 +194,7 @@ async def _upsert_question(
         q = Question(
             source=payload.source,
             qid=payload.qid,
+            course_id=course_id,
             passage_id=passage_id,
             stem_html=parsed.stem_html,
             stem_plain=parsed.stem_plain,
@@ -232,6 +236,16 @@ async def _upsert_question(
         existing.last_updated_at = func.clock_timestamp()
         await session.flush()
 
+    # Course re-scope (V-CAP2): a capture may supply a course the existing row
+    # lacked or differs from. Adopt it and re-flag for categorization so the
+    # grounded-tag job recalls against the new course's outline. A capture with
+    # no course_slug (course_id None) never clears an existing binding.
+    if course_id is not None and existing.course_id != course_id:
+        existing.course_id = course_id
+        existing.needs_categorization = True
+        existing.last_updated_at = func.clock_timestamp()
+        await session.flush()
+
     return existing
 
 
@@ -262,12 +276,31 @@ def _sanity_warnings(payload: CapturePayload) -> list[dict[str, Any]]:
     return warnings
 
 
+async def _resolve_course_id(session: AsyncSession, course_slug: str | None) -> int | None:
+    """Resolve ``course_slug`` → ``course_id`` against ``courses.slug`` (V-CAP2).
+
+    None slug → None (unscoped, single-course fallback). Unknown slug →
+    :class:`UnknownCourseError` (the endpoint maps it to 422 — ⊥ silent drop)."""
+    if course_slug is None:
+        return None
+    course_id = (
+        await session.execute(select(Course.id).where(Course.slug == course_slug))
+    ).scalar_one_or_none()
+    if course_id is None:
+        raise UnknownCourseError(course_slug)
+    return course_id
+
+
 async def normalize_capture(
     payload: CapturePayload, session: AsyncSession
 ) -> IngestResponse:
     """Normalize one capture into {RawCapture, media, Passage, Question,
     Attempt}, stamping ``payload.source`` on each. Source-agnostic (§A) —
     the dispatching adapter only supplies the ``source`` key."""
+
+    # Step 0: resolve the course (V-CAP2) before writing anything — an unknown
+    # slug aborts the whole ingest (422) rather than persisting an unscoped row.
+    course_id = await _resolve_course_id(session, payload.course_slug)
 
     # Step 1: RawCapture (warnings may be appended later).
     initial_warnings = (
@@ -276,6 +309,7 @@ async def normalize_capture(
     rc = RawCapture(
         source=payload.source,
         qid=payload.qid,
+        course_id=course_id,
         captured_at=payload.captured_at,
         raw_html=payload.html,
         raw_json=payload.model_dump(mode="json"),
@@ -302,7 +336,7 @@ async def normalize_capture(
     resolved_choices = [_resolve_choice(c, media_by_hash) for c in payload.parsed.choices]
 
     # Step 5: question upsert.
-    question = await _upsert_question(session, payload, passage_id, resolved_choices)
+    question = await _upsert_question(session, payload, passage_id, resolved_choices, course_id)
 
     # Step 6: attempt.
     attempt = Attempt(

@@ -26,6 +26,17 @@ class UnknownSourceError(ValueError):
         )
 
 
+class UnknownCourseError(ValueError):
+    """Raised when a capture's `course_slug` matches no `courses.slug` (V-CAP2).
+
+    Symmetric with :class:`UnknownSourceError`; the capture endpoint maps both
+    to HTTP 422 (⊥ silently dropping the course or tagging the wrong one)."""
+
+    def __init__(self, course_slug: str) -> None:
+        self.course_slug = course_slug
+        super().__init__(f"no course with slug {course_slug!r}")
+
+
 @runtime_checkable
 class SourceAdapter(Protocol):
     """capture → normalized {Question, Attempt}, keyed by `source` (§A)."""

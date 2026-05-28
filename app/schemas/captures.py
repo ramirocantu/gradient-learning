@@ -74,6 +74,11 @@ class CapturePayload(BaseModel):
     # Source discriminator (§A) — routes to the matching source adapter.
     # Defaults to uworld for back-compat with the current extension.
     source: str = "uworld"
+    # Course this capture is studied under (V-CAP2). Resolved to `course_id`
+    # against `courses.slug` at ingest; unknown slug → 422. Optional only for
+    # back-compat with the pre-course extension + the single-course case —
+    # NULL falls back to the single-course tagging rule (kb/jobs.tag_pending).
+    course_slug: Optional[str] = None
     qid: str
     uworld_test_id: Optional[str] = None
     captured_at: datetime

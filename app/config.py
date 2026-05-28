@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     # (non-reasoning) chat model — o-series models don't expose logprobs.
     # Picked in the T5 spike; override via .env if a re-eval rotates them.
     OPENAI_MODEL: str = "gpt-4.1-mini"
+    # V-KB3: optional vision-capable chat model for PDF page transcription.
+    # None → fall back to OPENAI_MODEL (gpt-4.1-mini is multimodal).
+    OPENAI_VISION_MODEL: str | None = None
     OPENAI_CALIBRATOR_MODEL: str = "gpt-4.1-mini"
     EMBEDDING_MODEL: str = "text-embedding-3-small"
 

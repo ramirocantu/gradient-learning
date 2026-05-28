@@ -130,3 +130,27 @@ async def test_list_jobs_endpoint():
     assert len(data) == 2
     job_ids = {entry["job_id"] for entry in data}
     assert job_ids == {"run_anki_sync", "run_anki_review"}
+
+
+# --------------------------------------------------------------------------- #
+# T51 — KB jobs registered in the scheduler
+# --------------------------------------------------------------------------- #
+
+
+def test_kb_jobs_registered_on_start():
+    """start_scheduler wires the PDF-ingest + Notion-sync interval jobs (T51)."""
+    import app.scheduler as sched_mod
+
+    added: list[str] = []
+
+    def _capture(*_args, **kwargs):
+        added.append(kwargs.get("id"))
+
+    with (
+        patch.object(sched_mod.scheduler, "add_job", side_effect=_capture),
+        patch.object(sched_mod.scheduler, "start"),
+    ):
+        sched_mod.start_scheduler()
+
+    assert "run_pdf_ingest" in added
+    assert "run_notion_sync" in added

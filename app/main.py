@@ -17,6 +17,7 @@ from app.api.v1.attempts import router as attempts_router
 from app.api.v1.captures import router as captures_router
 from app.api.v1.kb_reads import router as kb_reads_router
 from app.api.v1.outline import router as outline_router
+from app.api.v1.pdf import router as pdf_router
 from app.api.v1.pkm import router as pkm_router
 from app.api.v1.tutor import router as tutor_router
 from app.config import settings
@@ -50,6 +51,7 @@ app.add_middleware(
 
 v1 = APIRouter(prefix="/api/v1")
 v1.include_router(captures_router)
+v1.include_router(pdf_router)
 v1.include_router(outline_router)
 v1.include_router(kb_reads_router)
 v1.include_router(admin_router)

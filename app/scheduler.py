@@ -20,6 +20,9 @@ from app.services.anki.assignment import run_complete_unlocked, run_unlock_due
 from app.services.anki.review import run_review_due
 from app.services.anki.client import AnkiConnectClient
 from app.services.anki.sync import sync_deck
+from app.services.kb.inbox import poll_inbox
+from app.services.kb.notion import sync_pending_nodes
+from app.services.llm.client import build_openai_client
 
 logger = logging.getLogger(__name__)
 
@@ -341,6 +344,209 @@ async def run_anki_review_job() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# PDF inbox ingest job (T51, V-KB1, V41)
+# --------------------------------------------------------------------------- #
+
+
+async def _do_run_pdf_ingest() -> None:
+    """Poll ``PDF_INBOX_DIR/<slug>/*.pdf`` → vision-ingest each (V-KB1).
+
+    Skips (no-op, ``succeeded``) when no OpenAI key is configured — ingest
+    needs the vision + extraction calls. V41: ``poll_inbox`` isolates per-file
+    failures into ``report.failures`` so the run still reaches ``commit()`` and
+    is marked ``succeeded`` (partial), resuming next tick via the SHA filter.
+    """
+    run_id: int | None = None
+    try:
+        async with AsyncSessionLocal() as session:
+            row = TaskRun(
+                job_name="run_pdf_ingest",
+                started_at=datetime.now(timezone.utc),
+                status=TaskRunStatus.running,
+                items_processed=0,
+            )
+            session.add(row)
+            await session.flush()
+            run_id = row.id
+            await session.commit()
+
+        if not settings.OPENAI_API_KEY:
+            async with AsyncSessionLocal() as session:
+                run_row = await session.get(TaskRun, run_id)
+                if run_row is not None:
+                    run_row.status = TaskRunStatus.succeeded
+                    run_row.error_text = "openai unconfigured — pdf ingest skipped"
+                    run_row.finished_at = datetime.now(timezone.utc)
+                await session.commit()
+            logger.info("run_pdf_ingest: OPENAI_API_KEY unset; skipping")
+            return
+
+        client = build_openai_client()
+        async with AsyncSessionLocal() as session:
+            report = await poll_inbox(
+                session,
+                vision_client=client,
+                extract_client=client,
+                inbox_dir=settings.PDF_INBOX_DIR,
+            )
+            await session.commit()
+
+        async with AsyncSessionLocal() as session:
+            run_row = await session.get(TaskRun, run_id)
+            if run_row is not None:
+                run_row.status = TaskRunStatus.succeeded
+                run_row.items_processed = report.new_facts
+                if report.failures or report.files_skipped:
+                    run_row.error_text = (
+                        f"ingested={report.files_ingested} reused={report.files_reused} "
+                        f"skipped={report.files_skipped} failures={len(report.failures)}"
+                    )[:2000]
+                run_row.finished_at = datetime.now(timezone.utc)
+            await session.commit()
+
+        logger.info(
+            "run_pdf_ingest finished: seen=%d ingested=%d reused=%d skipped=%d "
+            "new_facts=%d failures=%d",
+            report.files_seen,
+            report.files_ingested,
+            report.files_reused,
+            report.files_skipped,
+            report.new_facts,
+            len(report.failures),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("run_pdf_ingest failed: %s", exc)
+        if run_id is not None:
+            try:
+                async with AsyncSessionLocal() as session:
+                    run_row = await session.get(TaskRun, run_id)
+                    if run_row is not None:
+                        run_row.status = TaskRunStatus.failed
+                        run_row.error_text = str(exc)[:2000]
+                        run_row.finished_at = datetime.now(timezone.utc)
+                    await session.commit()
+            except Exception:  # noqa: BLE001
+                logger.exception("failed to record pdf_ingest failure in task_runs")
+
+
+async def run_pdf_ingest_job() -> None:
+    async with _lock:
+        if "run_pdf_ingest" in _inflight:
+            logger.warning("run_pdf_ingest already in-flight, skipping")
+            return
+        _inflight.add("run_pdf_ingest")
+    try:
+        await _do_run_pdf_ingest()
+    finally:
+        async with _lock:
+            _inflight.discard("run_pdf_ingest")
+
+
+# --------------------------------------------------------------------------- #
+# Notion write-out job (T51, V-N1, V-N2, V41)
+# --------------------------------------------------------------------------- #
+
+
+async def _do_run_notion_sync() -> None:
+    """One-way mirror tagged atomic facts → Notion (V-N1, V-N2).
+
+    Skips (no-op, ``succeeded``) when Notion is unconfigured. Empty until the
+    categorizer (T50) sets ``atomic_facts.node_id`` — only tagged facts have a
+    node page to live on. V41: per-node failures isolated; run still
+    ``succeeded`` (partial).
+    """
+    run_id: int | None = None
+    notion_client = None
+    try:
+        async with AsyncSessionLocal() as session:
+            row = TaskRun(
+                job_name="run_notion_sync",
+                started_at=datetime.now(timezone.utc),
+                status=TaskRunStatus.running,
+                items_processed=0,
+            )
+            session.add(row)
+            await session.flush()
+            run_id = row.id
+            await session.commit()
+
+        if not settings.NOTION_API_TOKEN or not settings.NOTION_WIKI_DB_ID:
+            async with AsyncSessionLocal() as session:
+                run_row = await session.get(TaskRun, run_id)
+                if run_row is not None:
+                    run_row.status = TaskRunStatus.succeeded
+                    run_row.error_text = "notion unconfigured — sync skipped"
+                    run_row.finished_at = datetime.now(timezone.utc)
+                await session.commit()
+            logger.info("run_notion_sync: NOTION_API_TOKEN/WIKI_DB_ID unset; skipping")
+            return
+
+        from notion_client import AsyncClient
+
+        notion_client = AsyncClient(auth=settings.NOTION_API_TOKEN)
+        async with AsyncSessionLocal() as session:
+            report = await sync_pending_nodes(
+                session,
+                notion_client=notion_client,
+                notion_wiki_db_id=settings.NOTION_WIKI_DB_ID,
+            )
+            await session.commit()
+
+        async with AsyncSessionLocal() as session:
+            run_row = await session.get(TaskRun, run_id)
+            if run_row is not None:
+                run_row.status = TaskRunStatus.succeeded
+                run_row.items_processed = report.nodes_synced
+                if report.failures:
+                    run_row.error_text = (
+                        f"nodes={report.nodes_synced} pages_created={report.pages_created} "
+                        f"blocks={report.blocks_appended} failures={len(report.failures)}"
+                    )[:2000]
+                run_row.finished_at = datetime.now(timezone.utc)
+            await session.commit()
+
+        logger.info(
+            "run_notion_sync finished: nodes=%d pages_created=%d blocks=%d failures=%d",
+            report.nodes_synced,
+            report.pages_created,
+            report.blocks_appended,
+            len(report.failures),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("run_notion_sync failed: %s", exc)
+        if run_id is not None:
+            try:
+                async with AsyncSessionLocal() as session:
+                    run_row = await session.get(TaskRun, run_id)
+                    if run_row is not None:
+                        run_row.status = TaskRunStatus.failed
+                        run_row.error_text = str(exc)[:2000]
+                        run_row.finished_at = datetime.now(timezone.utc)
+                    await session.commit()
+            except Exception:  # noqa: BLE001
+                logger.exception("failed to record notion_sync failure in task_runs")
+    finally:
+        if notion_client is not None:
+            try:
+                await notion_client.aclose()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+async def run_notion_sync_job() -> None:
+    async with _lock:
+        if "run_notion_sync" in _inflight:
+            logger.warning("run_notion_sync already in-flight, skipping")
+            return
+        _inflight.add("run_notion_sync")
+    try:
+        await _do_run_notion_sync()
+    finally:
+        async with _lock:
+            _inflight.discard("run_notion_sync")
+
+
+# --------------------------------------------------------------------------- #
 # Scheduler lifecycle
 # --------------------------------------------------------------------------- #
 
@@ -375,6 +581,20 @@ def start_scheduler() -> None:
         "interval",
         minutes=settings.ANKI_REVIEW_PUSH_INTERVAL_MINUTES,
         id="run_anki_review",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        run_pdf_ingest_job,
+        "interval",
+        minutes=settings.PDF_INGEST_INTERVAL_MINUTES,
+        id="run_pdf_ingest",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        run_notion_sync_job,
+        "interval",
+        minutes=settings.NOTION_SYNC_INTERVAL_MINUTES,
+        id="run_notion_sync",
         replace_existing=True,
     )
     scheduler.start()

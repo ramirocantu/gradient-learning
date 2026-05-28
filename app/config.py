@@ -89,6 +89,12 @@ class Settings(BaseSettings):
     NOTION_API_TOKEN: str | None = None
     NOTION_WIKI_DB_ID: str | None = None
 
+    # T51 KB job cadence. PDF inbox polled for new <slug>/*.pdf; Notion
+    # write-out mirrors tagged atomic facts one-way (V-N1). Both no-op when
+    # their config (OpenAI key / Notion token) is absent.
+    PDF_INGEST_INTERVAL_MINUTES: int = 30
+    NOTION_SYNC_INTERVAL_MINUTES: int = 60
+
 
 settings = Settings()
 

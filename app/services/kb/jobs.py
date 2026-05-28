@@ -32,13 +32,18 @@ from app.models.atomic_fact import AtomicFact
 from app.models.atomic_fact_tag import AtomicFactTag
 from app.models.captures import Question
 from app.models.content_embedding import ContentEmbedding
-from app.models.outline import Course, OutlineNode
+from app.models.outline import OUTLINE_PATH_DELIMITER, Course, OutlineNode
 from app.services.kb.embeddings import current_version, embed_and_persist
 from app.services.kb.persist_tags import ATOMIC_FACT, QUESTION, persist_grounded_tags
 from app.services.kb.recall import load_embedding, retrieve_candidates
 from app.services.llm.grounded import generate_grounded_tags
 
 _logger = logging.getLogger("app.services.kb.jobs")
+
+# C: the live job runs few-shot exemplars ON (the design kept SRKI but the
+# scheduler had been calling recall with the 0 default — SRKI inert). 3 prior
+# calibrated tags per candidate is the paper's retrieved-ICL injection budget.
+EXEMPLARS_PER_NODE = 3
 
 
 @dataclass
@@ -76,6 +81,76 @@ class TagReport:
 # --------------------------------------------------------------------------- #
 
 
+def _render_node_path(node: OutlineNode, by_id: dict[int, OutlineNode]) -> str:
+    """Walk ``parent_id`` to the root, rendering the ``>>``-joined path (V-O4).
+
+    Mirrors ``recall._render_path`` but returns the leaf name alone if an
+    ancestor is missing rather than ``None`` — we always want *some* text to
+    embed.
+    """
+
+    segs = [node.name]
+    cur: OutlineNode | None = node
+    while cur is not None and cur.parent_id is not None:
+        cur = by_id.get(cur.parent_id)
+        if cur is None:
+            break
+        segs.append(cur.name)
+    return OUTLINE_PATH_DELIMITER.join(reversed(segs))
+
+
+async def _embed_outline_nodes(
+    session: AsyncSession,
+    *,
+    openai_client: Any,
+    version: str,
+    report: EmbedReport,
+) -> None:
+    """Embed outline nodes by their FULL ``>>`` path, not the bare leaf name
+    (B). The recall cosine matches a fact's prose against the tag's *meaning*;
+    an ancestor-qualified path ("Metabolism >> Glycolysis >> Regulation")
+    carries far more of that than the leaf token alone. Changing this text
+    invalidates prior vectors ⇒ bump :func:`current_version` (V-E1)."""
+
+    nodes = (await session.execute(select(OutlineNode))).scalars().all()
+    by_id = {n.id: n for n in nodes}
+    embedded_ids = set(
+        (
+            await session.execute(
+                select(ContentEmbedding.entity_id).where(
+                    ContentEmbedding.entity_kind == "outline_node",
+                    ContentEmbedding.embedding_version == version,
+                )
+            )
+        ).scalars().all()
+    )
+
+    for node in nodes:
+        if node.id in embedded_ids:
+            continue
+        text = _render_node_path(node, by_id)
+        if not text.strip():
+            continue
+        try:
+            result = await embed_and_persist(
+                session,
+                openai_client=openai_client,
+                entity_kind="outline_node",
+                entity_id=node.id,
+                text=text,
+                version=version,
+            )
+        except Exception as exc:  # noqa: BLE001 — V41 per-item isolation
+            report.failures.append(f"outline_node:{node.id}: {exc}")
+            _logger.warning("embed_pending: failed on outline_node:%s: %s", node.id, exc)
+            continue
+        if result.reused:
+            report.reused += 1
+        else:
+            report.embedded += 1
+            report.tokens += result.tokens
+
+
 async def embed_pending(
     session: AsyncSession,
     *,
@@ -90,9 +165,13 @@ async def embed_pending(
     version = version or current_version()
     report = EmbedReport()
 
-    # (entity_kind, id column, text column) — text is what we embed.
+    # Outline nodes embed their >>-path (B); see _embed_outline_nodes.
+    await _embed_outline_nodes(
+        session, openai_client=openai_client, version=version, report=report
+    )
+
+    # (entity_kind, id column, text column) — surface text embedded directly.
     specs = [
-        ("outline_node", OutlineNode.id, OutlineNode.name),
         (ATOMIC_FACT, AtomicFact.id, AtomicFact.text),
         (QUESTION, Question.id, Question.stem_plain),
     ]
@@ -169,6 +248,8 @@ async def _tag_one(
         course_id=course_id,
         query_embedding=embedding,
         embedding_version=version,
+        exemplars_per_node=EXEMPLARS_PER_NODE,  # C: SRKI on in the live job
+        exclude_entity=(entity_kind, entity_id),  # A: don't recall self
     )
     result = await generate_grounded_tags(
         entity_text=entity_text,

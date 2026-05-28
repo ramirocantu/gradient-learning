@@ -88,6 +88,18 @@ async def test_extract_atomic_facts_parses_structured_output():
     assert out.facts == ["Fact one is here.", "Fact two is here."]
 
 
+async def test_vision_and_extract_forward_service_tier():
+    """V-L5: service_tier is forwarded onto the chat calls when set, omitted by
+    default."""
+    vc = make_client(make_completion(content="page text"))
+    await transcribe_page(b"\x89PNG", client=vc, model="gpt-5.4-mini", service_tier="flex")
+    assert vc.chat.completions.create.await_args.kwargs["service_tier"] == "flex"
+
+    ec = make_client(_facts_completion("A fact."))
+    await extract_atomic_facts("text", client=ec, model="gpt-5.4-nano")  # default None
+    assert "service_tier" not in ec.chat.completions.create.await_args.kwargs
+
+
 async def test_extract_atomic_facts_blank_text_skips_llm_call():
     # V-KB4: nothing to extract → no API call, empty result.
     client = client_with_error(AssertionError("must not call the model on blank text"))

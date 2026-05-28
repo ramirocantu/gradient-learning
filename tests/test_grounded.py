@@ -179,6 +179,28 @@ async def test_pick_maps_to_node_and_calibrates():
     calib.chat.completions.create.assert_awaited()  # V69 ran
 
 
+async def test_service_tier_threaded_into_tagging_and_calibrator(monkeypatch):
+    """V-L5: settings.OPENAI_SERVICE_TIER flows into BOTH the tagging chat call
+    and the calibrator call."""
+    from app.services.llm import grounded as grounded_mod
+
+    monkeypatch.setattr(grounded_mod.settings, "OPENAI_SERVICE_TIER", "flex")
+
+    res = _recall(_cand(10, path="root >> alpha"))
+    tagging = _tagging_client([{"node_index": 1, "rationale": "fits"}])
+    calib = _calibrator_client(yes=-0.05, no=-4.0)
+
+    await generate_grounded_tags(
+        entity_text="some fact",
+        recall_result=res,
+        tagging_client=tagging,
+        calibrator_client=calib,
+    )
+
+    assert tagging.chat.completions.create.await_args.kwargs["service_tier"] == "flex"
+    assert calib.chat.completions.create.await_args.kwargs["service_tier"] == "flex"
+
+
 async def test_calibration_below_half_sets_manual_review():
     """V69 / V-T3: calibrated <0.5 ⇒ manual_review."""
     res = _recall(_cand(10, path="root >> alpha"))

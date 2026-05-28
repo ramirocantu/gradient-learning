@@ -124,6 +124,53 @@ async def test_grade_yes_no_uses_max_one_completion_token():
     assert "tools" not in kwargs
 
 
+async def test_grade_yes_no_passes_reasoning_effort_none_by_default():
+    """V-L5: reasoning OFF is required on GPT-5.x to get logprobs back."""
+    completion = _logprobs_completion(
+        chosen_token="Yes", top=[("Yes", -0.05), ("No", -3.0)]
+    )
+    client = make_client(completion)
+
+    await calibrator.grade_yes_no(prompt="?", openai_client=client, model="gpt-5.4-nano")
+
+    kwargs = client.chat.completions.create.await_args.kwargs
+    assert kwargs["reasoning_effort"] == "none"
+
+
+async def test_grade_yes_no_omits_reasoning_effort_when_none():
+    """Legacy non-reasoning models reject the flag — None omits it entirely."""
+    completion = _logprobs_completion(
+        chosen_token="Yes", top=[("Yes", -0.05), ("No", -3.0)]
+    )
+    client = make_client(completion)
+
+    await calibrator.grade_yes_no(
+        prompt="?", openai_client=client, model="gpt-4o-mini", reasoning_effort=None
+    )
+
+    kwargs = client.chat.completions.create.await_args.kwargs
+    assert "reasoning_effort" not in kwargs
+
+
+async def test_grade_yes_no_service_tier_forwarded_and_omitted():
+    """V-L5: service_tier forwarded when set, omitted (default) otherwise."""
+    completion = _logprobs_completion(
+        chosen_token="Yes", top=[("Yes", -0.05), ("No", -3.0)]
+    )
+
+    client_flex = make_client(completion)
+    await calibrator.grade_yes_no(
+        prompt="?", openai_client=client_flex, model="gpt-5.4-nano", service_tier="flex"
+    )
+    assert client_flex.chat.completions.create.await_args.kwargs["service_tier"] == "flex"
+
+    client_none = make_client(completion)
+    await calibrator.grade_yes_no(
+        prompt="?", openai_client=client_none, model="gpt-5.4-nano"  # default None
+    )
+    assert "service_tier" not in client_none.chat.completions.create.await_args.kwargs
+
+
 async def test_case_insensitive_yes_token():
     """Tokens like 'yes' / ' yes' / 'Yes.' all count as Yes."""
     completion = _logprobs_completion(

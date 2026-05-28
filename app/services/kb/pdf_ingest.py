@@ -171,17 +171,19 @@ async def transcribe_page(
     client: Any,
     model: str,
     max_tokens: int = _VISION_MAX_TOKENS,
+    service_tier: str | None = None,
 ) -> PageTranscription:
     """One OpenAI vision call: page image → transcribed text (V-KB3).
 
     ``client`` is an ``AsyncOpenAI``-shaped object, injected + mocked at the
-    SDK boundary in tests (V16)."""
+    SDK boundary in tests (V16). ``service_tier`` (e.g. ``'flex'``, V-L5) is
+    forwarded when set."""
 
     b64 = base64.b64encode(image_png).decode("ascii")
-    completion = await client.chat.completions.create(
-        model=model,
-        max_completion_tokens=max_tokens,
-        messages=[
+    create_kwargs: dict[str, Any] = {
+        "model": model,
+        "max_completion_tokens": max_tokens,
+        "messages": [
             {"role": "system", "content": _VISION_SYSTEM},
             {
                 "role": "user",
@@ -194,7 +196,10 @@ async def transcribe_page(
                 ],
             },
         ],
-    )
+    }
+    if service_tier is not None:
+        create_kwargs["service_tier"] = service_tier
+    completion = await client.chat.completions.create(**create_kwargs)
     prompt_tokens, output_tokens, cached_tokens = _read_usage(completion)
     text = (_message_content(completion) or "").strip()
     return PageTranscription(
@@ -261,24 +266,29 @@ async def extract_atomic_facts(
     client: Any,
     model: str,
     max_tokens: int = _EXTRACT_MAX_TOKENS,
+    service_tier: str | None = None,
 ) -> FactExtraction:
     """One OpenAI structured-output call: page text → atomic facts (V-KB4).
 
     Empty/blank input → no LLM call, empty result. Strict json_schema emits the
-    document in ``choice.message.content`` (mirrors ``llm/grounded.py``)."""
+    document in ``choice.message.content`` (mirrors ``llm/grounded.py``).
+    ``service_tier`` (e.g. ``'flex'``, V-L5) is forwarded when set."""
 
     if not text.strip():
         return FactExtraction()
 
-    completion = await client.chat.completions.create(
-        model=model,
-        max_completion_tokens=max_tokens,
-        messages=[
+    create_kwargs: dict[str, Any] = {
+        "model": model,
+        "max_completion_tokens": max_tokens,
+        "messages": [
             {"role": "system", "content": _EXTRACT_SYSTEM},
             {"role": "user", "content": text.strip()},
         ],
-        response_format=_EXTRACT_SCHEMA,
-    )
+        "response_format": _EXTRACT_SCHEMA,
+    }
+    if service_tier is not None:
+        create_kwargs["service_tier"] = service_tier
+    completion = await client.chat.completions.create(**create_kwargs)
     prompt_tokens, output_tokens, cached_tokens = _read_usage(completion)
 
     content = _message_content(completion)
@@ -342,6 +352,7 @@ async def ingest_pdf(
     extract_client = extract_client or vision_client
     resolved_vision_model = vision_model or settings.OPENAI_VISION_MODEL or settings.OPENAI_MODEL
     resolved_extract_model = extract_model or settings.OPENAI_MODEL
+    service_tier = settings.OPENAI_SERVICE_TIER  # V-L5 Flex (None omits)
 
     sha = _sha256_file(path)
 
@@ -378,14 +389,20 @@ async def ingest_pdf(
 
     for rendered in pages:
         transcription = await transcribe_page(
-            rendered.image_png, client=vision_client, model=resolved_vision_model
+            rendered.image_png,
+            client=vision_client,
+            model=resolved_vision_model,
+            service_tier=service_tier,
         )
         in_tokens += transcription.prompt_tokens
         out_tokens += transcription.output_tokens
         cached += transcription.cached_tokens
 
         extraction = await extract_atomic_facts(
-            transcription.text, client=extract_client, model=resolved_extract_model
+            transcription.text,
+            client=extract_client,
+            model=resolved_extract_model,
+            service_tier=service_tier,
         )
         in_tokens += extraction.prompt_tokens
         out_tokens += extraction.output_tokens

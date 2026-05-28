@@ -7,16 +7,20 @@ discriminator question, then converts it to a [0,1] score:
 
     Conf = exp(L_yes) / (exp(L_yes) + exp(L_no))
 
-`<0.5` ⇒ `manual_review=true` (V-T3). The calibrator model **must** support
-`logprobs` — i.e. a standard chat model (`gpt-4.1*` / `gpt-4o*`), NOT an
-o-series reasoning model (V-C constraint). Tagging may use any model; the
-calibrator is a separate config knob (`OPENAI_CALIBRATOR_MODEL`).
+`<0.5` ⇒ `manual_review=true` (V-T3). The calibrator model **must** expose
+`logprobs`. On GPT-5.x that requires `reasoning_effort='none'` — reasoning
+mode does not return logprobs — so the grade is run reasoning-OFF, which also
+fits V69's non-reasoning constraint (V-L5: `OPENAI_CALIBRATOR_MODEL` =
+`gpt-5.4-nano`, reasoning off). Legacy non-reasoning chat models (`gpt-4.1*` /
+`gpt-4o*`) work too — pass `reasoning_effort=None` to omit the flag for those.
+Tagging may use any model; the calibrator is a separate config knob
+(`OPENAI_CALIBRATOR_MODEL`).
 
 The grade is run on a **plain completion** (no `response_format`,
-`max_completion_tokens=1`) so the single emitted token is readable. The
-SDK exposes `top_logprobs` on `choice.logprobs.content[0]`; we look for
-'Yes' / 'No' (case-insensitive) and fall back to 0.0 when neither token
-makes the top-5.
+`max_completion_tokens=1`, `reasoning_effort='none'`) so the single emitted
+token is readable. The SDK exposes `top_logprobs` on
+`choice.logprobs.content[0]`; we look for 'Yes' / 'No' (case-insensitive) and
+fall back to 0.0 when neither token makes the top-5.
 """
 
 from __future__ import annotations
@@ -90,28 +94,39 @@ async def grade_yes_no(
     model: str,
     system: str | None = None,
     top_logprobs: int = _DEFAULT_TOP_LOGPROBS,
+    reasoning_effort: str | None = "none",
+    service_tier: str | None = None,
 ) -> CalibrationResult:
     """Ask the calibrator a Yes/No question, read the next-token logprob
     distribution, return a calibrated confidence score.
 
     `prompt` is the user-side question — should be phrased so a literal
-    'Yes' or 'No' is the only sane next token. `system` is optional
-    framing. Set `model` to a logprobs-capable chat model
-    (`OPENAI_CALIBRATOR_MODEL`); o-series models will fail at the SDK
-    layer because they don't accept `logprobs=True`.
+    'Yes' or 'No' is the only sane next token. `system` is optional framing.
+    Set `model` to a logprobs-capable chat model (`OPENAI_CALIBRATOR_MODEL`).
+
+    `reasoning_effort` defaults to `'none'` — REQUIRED on GPT-5.x to get
+    `logprobs` back at all (reasoning mode returns none) and to honour V69's
+    non-reasoning constraint. Pass `None` to omit the flag entirely for a
+    legacy non-reasoning model (`gpt-4o*` / `gpt-4.1*`) that rejects it.
     """
     messages: list[dict[str, Any]] = []
     if system:
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": prompt})
 
-    completion = await openai_client.chat.completions.create(
-        model=model,
-        messages=messages,
-        max_completion_tokens=1,
-        logprobs=True,
-        top_logprobs=top_logprobs,
-    )
+    create_kwargs: dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "max_completion_tokens": 1,
+        "logprobs": True,
+        "top_logprobs": top_logprobs,
+    }
+    if reasoning_effort is not None:
+        create_kwargs["reasoning_effort"] = reasoning_effort
+    if service_tier is not None:
+        create_kwargs["service_tier"] = service_tier  # V-L5 Flex
+
+    completion = await openai_client.chat.completions.create(**create_kwargs)
 
     choice = completion.choices[0] if completion.choices else None
     chosen_token: str | None = None
@@ -159,9 +174,15 @@ async def calibrate_tag(
     tag_label: str,
     openai_client: AsyncOpenAI,
     model: str,
+    reasoning_effort: str | None = "none",
+    service_tier: str | None = None,
 ) -> CalibrationResult:
     """Calibrate one (question, candidate_tag) pair. Wrapper around
     `grade_yes_no` that supplies the standard discriminator framing.
+
+    `reasoning_effort` defaults to `'none'` (V-L5: gpt-5.4-nano reasoning off,
+    required for logprobs); pass `None` for a legacy calibrator model.
+    `service_tier` (e.g. `'flex'`, V-L5) is forwarded when set.
     """
     return await grade_yes_no(
         prompt=_build_discriminator_prompt(
@@ -171,4 +192,6 @@ async def calibrate_tag(
         system=_DISCRIMINATOR_SYSTEM,
         openai_client=openai_client,
         model=model,
+        reasoning_effort=reasoning_effort,
+        service_tier=service_tier,
     )

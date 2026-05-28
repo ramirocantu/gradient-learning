@@ -152,6 +152,32 @@ async def test_embed_pending_embeds_all_kinds(db_session: AsyncSession):
     assert kinds == {"outline_node", "atomic_fact", "question"}
 
 
+async def test_embed_pending_embeds_outline_node_by_full_path(db_session: AsyncSession):
+    """B: outline nodes embed their ancestor-qualified ``>>`` path, not the
+    bare leaf name — the recall cosine matches a fact's prose against the
+    tag's meaning, and the path carries far more of it."""
+
+    course = await _course(db_session)
+    parent = await _node(db_session, course.id, "Metabolism")
+    child = OutlineNode(
+        course_id=course.id,
+        parent_id=parent.id,
+        kind="concept",
+        name="Glycolysis",
+        depth=1,
+        position=0,
+    )
+    db_session.add(child)
+    await db_session.flush()
+
+    client = _embed_client()
+    await embed_pending(db_session, openai_client=client)
+
+    inputs = [c.kwargs["input"] for c in client.embeddings.create.call_args_list]
+    assert "Metabolism >> Glycolysis" in inputs  # child embedded by full path
+    assert "Metabolism" in inputs                # root = its own name
+
+
 async def test_embed_pending_idempotent(db_session: AsyncSession):
     course = await _course(db_session)
     await _node(db_session, course.id, "TCA cycle")

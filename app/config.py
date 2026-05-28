@@ -36,16 +36,24 @@ class Settings(BaseSettings):
     # process is reachable at a non-default origin.
     BACKEND_BASE_URL: str = "http://localhost:8000"
 
-    # OpenAI model selection (P0 pivot). Single tagging/facts model + a
-    # logprobs-capable calibrator. Per §C, the calibrator MUST be a standard
-    # (non-reasoning) chat model — o-series models don't expose logprobs.
-    # Picked in the T5 spike; override via .env if a re-eval rotates them.
-    OPENAI_MODEL: str = "gpt-4.1-mini"
-    # V-KB3: optional vision-capable chat model for PDF page transcription.
-    # None → fall back to OPENAI_MODEL (gpt-4.1-mini is multimodal).
-    OPENAI_VISION_MODEL: str | None = None
-    OPENAI_CALIBRATOR_MODEL: str = "gpt-4.1-mini"
+    # OpenAI model selection (V-L5, 2026-05-28). Per-task model pinned by
+    # capability + cost (SPEC §V V-L5): nano for text (tag / extract / calibrate),
+    # mini for vision. The calibrator runs reasoning OFF — logprobs require it on
+    # 5.x; calibrator.grade_yes_no sets reasoning_effort='none'. Override via .env
+    # if a V-L2 re-eval rotates them.
+    OPENAI_MODEL: str = "gpt-5.4-nano"
+    # V-KB3 / V-L5: vision-capable model for PDF page transcription. ⊥ nano (weak
+    # vision poisons downstream); None → fall back to OPENAI_MODEL.
+    OPENAI_VISION_MODEL: str | None = "gpt-5.4-mini"
+    OPENAI_CALIBRATOR_MODEL: str = "gpt-5.4-nano"
     EMBEDDING_MODEL: str = "text-embedding-3-small"
+    # V-L5: async KB jobs run on the Flex processing tier (~50% off Standard),
+    # threaded into every OpenAI chat call (vision / extract / generation /
+    # calibrator). Valid: "flex" | "auto" | "default" | "priority". None omits
+    # the param (older API / unsupported model). Embeddings are NOT covered:
+    # embeddings.create stays synchronous — the Batch-API embedding path was
+    # evaluated + deferred (pennies saved vs a polling subsystem; SPEC §O / V-L5).
+    OPENAI_SERVICE_TIER: str | None = "flex"
 
     # Scheduler (Ticket 6.9b)
     SCHEDULER_ENABLED: bool = True

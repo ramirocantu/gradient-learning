@@ -51,7 +51,7 @@ Seam = the normalized internal model + adapter registries keyed on `source` / `c
 - **LLM = OpenAI, single provider, behind `services/llm/`.** No local model required (vLLM dropped — logprobs are cloud-side). `OPENAI_BASE_URL` left configurable so an OpenAI-compatible local server can slot in later without code change.
 - LLM use mirrors the proven pattern: content-hash cache + `extractor_version` + token-cost log + structured output. Anthropic-specific cache markers retired (OpenAI caching is automatic — see V38/V42).
 - **Calibration** (LLM4Tag confidence) uses OpenAI logprobs. The calibrator model **must support `logprobs`** — i.e. a standard chat model (GPT-4o/4.1-class), **not** an o-series reasoning model. Tagging may use any model.
-- Embeddings default = OpenAI `text-embedding-3-small` (pgvector dim 1536); BGE-local (`bge-base-en-v1.5`, dim 768) retained as a config swap. `embedding_version` stamps every row; provider/dim change ⇒ bump + re-embed. **(Open: confirm OpenAI vs local embeddings — not part of the explicit LLM pivot.)**
+- Embeddings default = OpenAI `text-embedding-3-small` (pgvector dim 1536); BGE-local (`bge-base-en-v1.5`, dim 768) retained as a config swap. `embedding_version` stamps every row; provider/dim change ⇒ bump + re-embed. **(Confirmed 2026-05-28, V-L5: OpenAI `text-embedding-3-small`; BGE-local stays a swap.)**
 - Outline creation = **upload a schema**, not in-app PDF parsing. Gradient ships a prompt template; the user runs it against their own sources (PDF/screenshot/webpage) in their own LLM session, then uploads the resulting schema. Gradient owns validate + materialize only.
 - Anki source = AnkiConnect HTTP. Read calls only by default; write allowlist (`unsuspend`, `addTags`, namespaced `createFilteredDeck`) carried from the PoC, ⊥ scheduler mutation. Per-deck tag-shape parser is a plugin.
 - PDF corpus = user-uploaded classroom notes/slidedecks (incl. handwritten). Parse = render each page → image → OpenAI **vision** transcription (⊥ rely on embedded extractable text — handwriting / image slides have none). Atomic facts = OpenAI structured-output extraction grounded to the page transcription (⊥ regex sentence-split). **PyMuPDF** renders pages; pdfplumber retained for digital-text PDFs. local-dir poller. (Redesign 2026-05-28 — V-KB3/V-KB4, T54.)
@@ -126,7 +126,7 @@ discriminator_factors(
 ### Outline-schema import
 
 ```
-# Shipped schema format (JSON/YAML), uploaded by user:
+# Shipped schema format (JSON), uploaded by user:
 { "course": {"slug","name","description?"},
   "nodes": [ {"path": ["Section","FC","CC","Topic"], "kind", "name",
               "disciplines?": [...], "position?"} , ... ] }
@@ -190,10 +190,11 @@ tutor:    GET /api/v1/tutor/{questions/by-qid/{qid}, questions/by-attempt-id/{id
 DATABASE_URL                 # postgresql+asyncpg://…
 OPENAI_API_KEY               # required
 OPENAI_BASE_URL              # optional; OpenAI-compatible local server later
-OPENAI_MODEL                 # tagging / facts / Socratic — pick in P0 spike
-OPENAI_VISION_MODEL          # optional; vision-capable chat model for PDF page transcription (defaults to OPENAI_MODEL) — V-KB3
-OPENAI_CALIBRATOR_MODEL      # MUST support logprobs (non-reasoning chat model)
-EMBEDDING_MODEL              # default text-embedding-3-small (dim 1536)
+OPENAI_MODEL                 # tagging / facts / extraction — default gpt-5.4-nano (V-L5)
+OPENAI_VISION_MODEL          # PDF page transcription — default gpt-5.4-mini (⊥ nano; V-L5, V-KB3)
+OPENAI_CALIBRATOR_MODEL      # logprobs Yes/No grade — gpt-5.4-nano reasoning OFF (V69/V-L5)
+EMBEDDING_MODEL              # default text-embedding-3-small (dim 1536) — confirmed V-L5
+OPENAI_SERVICE_TIER          # default flex — async KB jobs, ≈50% off standard (V-L5)
 COACH_TOKEN                  # X-Coach-Token shared secret (extension + MCP persist)
 ANKICONNECT_URL ; ANKI_DECK_NAME ; ANKI_SYNC_INTERVAL_MINUTES
 PDF_INBOX_DIR
@@ -223,6 +224,7 @@ NOTION_API_TOKEN ; NOTION_WIKI_DB_ID    # ⊥ commit
 - V-L1: token-cost log reads OpenAI `usage` incl. `prompt_tokens_details.cached_tokens`; cache-hit accounting from `cached_tokens`, not inferred.
 - V16 (AMENDED): all LLM-touching code mocks **OpenAI** at the SDK boundary in tests; ⊥ real API calls in the suite.
 - V-L2 (gate): P0 ships a measurement harness re-running the anki-topic-resolver / categorizer eval on the chosen OpenAI model. Tagging quality (jaccard / set-equality vs the PoC's Claude baseline) is recorded before any pivot is declared done; a regression blocks the pivot.
+- V-L5 (model selection, decided 2026-05-28): per-task model pinned by capability+cost; all KB jobs are async ⇒ default `service_tier='flex'` (≈50% off Standard; Batch where a job tolerates queueing). **`OPENAI_MODEL` = `gpt-5.4-nano`** for tagging / atomic-fact extraction / grounded-tag / ranking — beats the retired `gpt-5-mini` on text reasoning (SWE-Bench Pro 52.4 vs 45.7) at ~4× lower cost, and OpenAI recommends nano for exactly classification/extraction/ranking ⇒ no nano→mini escalation tier. **`OPENAI_VISION_MODEL` = `gpt-5.4-mini`**, ⊥ nano — nano vision is weaker than even `gpt-5-mini` (OSWorld 39.0; "not built for vision") and a bad page transcription poisons every downstream fact/tag/embedding (V-KB3). **`EMBEDDING_MODEL` = `text-embedding-3-small`** (dim 1536) confirmed — no 5.4-class embedding model. Embeddings stay **synchronous** (`embed_pending`); Batch-API embedding (50% off) was evaluated 2026-05-28 and DEFERRED (see §O) — pennies saved at single-user scale vs a polling subsystem + ≤24h recall-index latency. **`OPENAI_CALIBRATOR_MODEL` = `gpt-5.4-nano` with reasoning OFF** — 5.4 models run reasoning-disabled DO expose `logprobs`, satisfying V69's logprob + non-reasoning constraint; same model as `OPENAI_MODEL` but the reasoning-off flag is mandatory for the Yes/No grade. Mechanism (wired): `calibrator.grade_yes_no` sets `reasoning_effort='none'` on the chat.completions call — on GPT-5.x this both disables reasoning AND is *required* to get `logprobs` back at all (reasoning mode returns none). `reasoning_effort=None` omits the flag for a legacy `gpt-4o*`/`gpt-4.1*` calibrator. Prices (Standard /1M tok): mini $0.75/$4.50, nano $0.20/$1.25, both 400k ctx. Any model rotation re-triggers the V-L2 harness. (ID note: V-L4 is the categorizer-cut invariant below — distinct.)
 
 **Embeddings / recall**
 - V-E1: `embedding_version` stamps every row; provider or dim change ⇒ bump + full re-embed. ⊥ mixed-dim vectors in one `content_embeddings` column.
@@ -263,7 +265,14 @@ NOTION_API_TOKEN ; NOTION_WIKI_DB_ID    # ⊥ commit
 - V-KB4 (notes-ingress redesign 2026-05-28): atomic facts extracted via OpenAI structured output (`response_format: json_schema, strict:true` — V45) grounded to the page transcription; ⊥ regex sentence-split as the fact source. Dedup by `content_hash` per course (carried, `UQ(course_id, content_hash)`). `atomic_facts.node_id` stays NULL until the grounded-tag categorizer (V-L3/V69) runs — ingress persists facts, T50 categorizes.
 
 **Retrieval (LLM4Tag Phase 1)**
-- V-L3: tagging prompts for atomic facts / questions are constrained by retrieved outline-node candidates (embeddings + `concept_edges.kind='similarity'` + optional few-shot exemplars from prior calibrated tags). ⊥ raw free-form judgment over the full outline. Recall layer feeds candidates; calibrator (V69) scores them.
+- V-L3 (amended 2026-05-28, V-L6): tagging prompts for atomic facts / questions are constrained by retrieved outline-node candidates. Recall merges THREE LLM4Tag meta-paths, deduped by node: **C2T** (cosine vs outline-node vectors), **C2C2T** (similar already-tagged content → its tag, V-L6), **T2T** (`concept_edges.kind='similarity'` neighbours of the C2T hits), plus optional few-shot exemplars from prior calibrated tags. ⊥ raw free-form judgment over the full outline. Recall layer feeds candidates; calibrator (V69) scores them.
+- V-L6 (recall-completeness fixes, 2026-05-28): the recall layer (`kb/recall.py`, `kb/jobs.py`) closes the gaps that silently capped tagging recall vs the LLM4Tag paper (the candidate set is the HR#k ceiling — a node never recalled can never be tagged). Five parts:
+  - **C2C2T content recall (A):** `_content_candidates` borrows tags from embedding-similar already-tagged `atomic_facts` in the course — the paper's hard-case rescuer (Fig 6), absent before. Second hop is **gold/silver weighted**: `source∈{manual,schema_map}` → weight 1.0 (`via='content-gold'`); `source='llm' ∧ ¬manual_review ∧ confidence≥δ_silver` → `silver_factor` (`via='content-silver'`, damps the echo/feedback loop). Computed on-the-fly (no content↔content edge table yet). The calibrator (V69) remains the hard backstop — C2C2T only proposes.
+  - **node-path embedding (B):** outline nodes embed their full `>>` path, not the bare leaf name — the cosine matches a fact's prose against the tag's *meaning*. Re-embed under `embedding_version` `-v2` (V-E1).
+  - **exemplars ON in the live job (C):** `tag_pending` calls recall with `exemplars_per_node=3` — SRKI was inert (default 0) before.
+  - **δ floor (D):** embedding + content candidates below `min_score` (provisional 0.25) are dropped, not handed up as least-bad picks; retune on the V-L2 harness against real `text-embedding-3-small` cosine scale.
+  - **fan-out caps (E):** T2T ≤ `edge_top_n` (5), C2C2T ≤ `content_node_cap` (5) — mirror the paper's meta-path caps so the candidate list can't balloon and dilute the pick.
+  - **Dependency flagged:** C2C2T's on-the-fly content↔content cosine scans all course content vectors per recall — Python cosine is fine at one-outline scale but is the first thing that forces the pgvector ANN swap (see V-E1 / similarity.py note). C2C2T is corpus-dependent: contributes ~nothing on a cold KB, strengthens as content tags up.
 - V-L4 (redesign CUT, 2026-05-27): legacy MCAT categorizer REMOVED. ⊥ `app/services/categorizer/{llm,worker,cache,_text}.py`, ⊥ `SUBJECT_TO_SECTION` / `uworld_aamc_tags`-driven per-section tagging, ⊥ `app/services/anki/topic_resolver*.py`. The LLM4Tag grounded path (`kb/recall` + `llm/grounded` + `kb/persist_tags` + `llm/calibrator`, V-L3/V69) is the SOLE categorization/tagging seam, wired live by T50. `OutlineLookup` + `normalize_typographic` are domain-blind core infra — live OUTSIDE `categorizer/` (relocated `app/services/outline/lookup.py`), ⊥ deleted with the categorizer. Categorization may be non-functional until T50; gap is intentional (PoC→general-tool transition). See §G, T53.
 
 **MCP write-back**
@@ -288,8 +297,9 @@ Re-sequenced 2026-05-26 per rescope: insert P0.5 stabilization gate; substrate (
 - **P4 — QBank synthesis + MCP/Notion write-back.** Discriminator-factor persistence via tutor/MCP seam, append-only, link-preserving (T31). Notion page/block append+update as one-way replica over `notion_pages` pointer, backlinks to question/node (T32). Expand source adapters (manual entry / web-Qbank / PDF question-set) under `app/services/adapters/` after write-back stable (T33). **T34 (done): SPA path PRUNED — backend-only.** Native client = separate downstream phase/repo (§O); ⊥ in-repo UI.
 
 ## §O — open items
-- Embeddings provider: OpenAI `text-embedding-3-small` (dim 1536) vs BGE-local (dim 768). Default set to OpenAI for single-provider consistency; confirm.
-- OpenAI model choices (`OPENAI_MODEL`, `OPENAI_CALIBRATOR_MODEL`) decided empirically in the P0 spike, not pinned here.
+- Embeddings provider: RESOLVED 2026-05-28 (V-L5) — OpenAI `text-embedding-3-small` (dim 1536) confirmed; BGE-local (dim 768) stays a config swap.
+- OpenAI model choices: RESOLVED 2026-05-28 (V-L5) — `OPENAI_MODEL`=gpt-5.4-nano, `OPENAI_VISION_MODEL`=gpt-5.4-mini, `OPENAI_CALIBRATOR_MODEL`=gpt-5.4-nano (reasoning OFF → exposes logprobs, satisfies V69), async chat jobs on Flex (`OPENAI_SERVICE_TIER`). Re-measure per V-L2 on any rotation.
+- Embeddings Batch-API (50% off): EVALUATED + DEFERRED 2026-05-28. Embeddings stay synchronous (`embed_pending`). The only confirmed embedding discount is the Batch API (`service_tier='flex'` on `/v1/embeddings` is undocumented); Batch is a two-phase async subsystem (state table + migration + submit/collect jobs + file upload/download + ≤24h poll) whose single-user ROI is pennies (text-embedding-3-small is the cheapest model) and whose ≤24h latency would stall the recall index after an outline import. Revisit only if embedding volume grows materially. (V-L5)
 - Old MCAT/UWorld attempt *data*: assumed not migrated (fresh start). UWorld capture adapter + AnKing parser kept as example code plugins.
 - `README.md` references a `backend/` subdir the repo doesn't have — fix during P0.
 - **Native client (backend-only pivot 2026-05-26):** a native macOS app (and any other frontend) is a separate downstream phase/repo, built against the documented seam — `docs/BACKEND_CORE.md` (curated catalog) + `docs/openapi.json` (machine-readable contract). Out of scope for this backend repo. Supersedes the retired T16/T34 SPA path.

@@ -62,14 +62,19 @@ def expected_dim(model: str | None = None) -> int | None:
 
 
 def current_version() -> str:
-    """V-E1 stamp. Format: ``<model>-v1``. Bump the suffix when a non-model
-    change (e.g. truncation policy) invalidates prior rows but the model
-    name itself stays put; otherwise the model name carries the dim
-    identity (text-embedding-3-small ⇒ 1536) and a rotation triggers a
+    """V-E1 stamp. Format: ``<model>-v2``. Bump the suffix when a non-model
+    change (e.g. truncation policy, embed-input text) invalidates prior rows
+    but the model name itself stays put; otherwise the model name carries the
+    dim identity (text-embedding-3-small ⇒ 1536) and a rotation triggers a
     natural version bump.
+
+    v1 → v2: outline nodes now embed their full ``>>`` path, not the bare
+    leaf name (B / recall fix). Old name-vectors are not comparable to the
+    new path-vectors, so the whole corpus re-embeds under v2 (V-E1: ⊥ mixed
+    embed-policy in one column).
     """
 
-    return f"{settings.EMBEDDING_MODEL}-v1"
+    return f"{settings.EMBEDDING_MODEL}-v2"
 
 
 async def embed_and_persist(

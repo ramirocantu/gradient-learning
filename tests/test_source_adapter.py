@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.database import Base
 from app.models.captures import Attempt, Passage, Question, RawCapture
+from app.models.outline import Course
 from app.schemas.captures import CapturePayload, ChoiceItem, ParsedCapture
 from app.services.adapters import UnknownSourceError, get_adapter, registered_sources
 from app.services.ingest import ingest_capture
@@ -26,6 +27,8 @@ _DB_URL = f"postgresql+asyncpg://gradient:gradient_secret@localhost:{_HOST_PORT}
 _ADMIN_DSN = f"postgresql://gradient:gradient_secret@localhost:{_HOST_PORT}/gradient"
 
 _TABLES = [
+    # Course first — Question + RawCapture FK→courses.id (V-CAP2, T56).
+    Course.__table__,
     Passage.__table__,
     Question.__table__,
     Attempt.__table__,

@@ -184,4 +184,4 @@ def test_current_version_includes_model_name():
     from app.config import settings
 
     assert settings.EMBEDDING_MODEL in current_version()
-    assert current_version().endswith("-v1")
+    assert current_version().endswith("-v2")

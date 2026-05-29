@@ -1,18 +1,20 @@
-"""T26 — app/services/kb/pdf_ingest.py contract tests (V-KB1).
+"""T54 — app/services/kb/pdf_ingest.py contract tests (V-KB1, V-KB3, V-KB4).
 
-V-KB1: substrate idempotent re-run. Re-ingesting a file with the same
-SHA-256 returns the existing ``pdf_sources`` row and writes no new
-``atomic_facts``. ``UQ(course_id, content_hash)`` on ``atomic_facts``
-is the second line of defense if the sentence splitter changes.
+Notes-ingress redesign: every page is rendered to an image and transcribed by
+an OpenAI vision call (V-KB3); the transcription feeds a structured-output
+fact-extraction call (V-KB4). Both clients are mocked at the SDK boundary
+(V16) via ``tests/_openai_mocks.py``; the page renderer is injected so these
+tests never touch PyMuPDF — except the one render smoke that opts in.
 
-The parser is injected so we never touch pdfplumber here — the seam's
-``parse_pdf`` default is exercised by the smoke test below using a
-tiny real PDF generated in a tmpdir.
+V-KB1: re-ingesting a file with the same SHA-256 returns the existing
+``pdf_sources`` row and writes no new ``atomic_facts``; ``UQ(course_id,
+content_hash)`` dedupes a fact that recurs across PDFs in one course.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 import uuid
 from pathlib import Path
 
@@ -24,11 +26,16 @@ from app.models.atomic_fact import AtomicFact
 from app.models.outline import Course
 from app.models.pdf_source import PdfSource
 from app.services.kb.pdf_ingest import (
+    EXTRACTOR_VERSION,
+    FactExtraction,
     IngestReport,
-    ParsedPage,
+    PageTranscription,
+    RenderedPage,
+    extract_atomic_facts,
     ingest_pdf,
-    split_atomic_candidates,
+    transcribe_page,
 )
+from tests._openai_mocks import client_with_error, make_client, make_completion
 
 
 async def _make_course(session: AsyncSession) -> Course:
@@ -42,40 +49,78 @@ def _fake_pdf(path: Path, content: bytes) -> None:
     path.write_bytes(content)
 
 
-def _forge_parser(pages: list[ParsedPage]):
-    def _parser(_: Path) -> list[ParsedPage]:
+def _forge_renderer(pages: list[RenderedPage]):
+    def _renderer(_: Path) -> list[RenderedPage]:
         return pages
 
-    return _parser
+    return _renderer
+
+
+def _facts_completion(*facts: str, **kw):
+    """A structured-output completion whose JSON body lists ``facts``."""
+    body = json.dumps({"facts": [{"text": f} for f in facts]})
+    return make_completion(content=body, **kw)
 
 
 # --------------------------------------------------------------------------- #
-# split_atomic_candidates — pure
+# transcribe_page / extract_atomic_facts — SDK-boundary mocks (no DB)
 # --------------------------------------------------------------------------- #
 
 
-def test_split_drops_short_sentences():
-    out = split_atomic_candidates("Too short. This sentence is long enough to keep.")
-    assert "This sentence is long enough to keep." in out
-    assert all(len(s) >= 20 for s in out)
-
-
-def test_split_handles_multiline():
-    text = (
-        "Glycolysis converts glucose to pyruvate.\n"
-        "It produces ATP through substrate-level phosphorylation.\n"
-        "skip"
+async def test_transcribe_page_reads_text_and_tokens():
+    client = make_client(
+        make_completion(content="Glycolysis converts glucose to pyruvate.",
+                        prompt_tokens=900, completion_tokens=50, cached_tokens=10)
     )
-    out = split_atomic_candidates(text)
-    assert len(out) == 2
+    out = await transcribe_page(b"\x89PNG fake", client=client, model="gpt-4.1-mini")
+    assert isinstance(out, PageTranscription)
+    assert out.text == "Glycolysis converts glucose to pyruvate."
+    assert out.prompt_tokens == 900
+    assert out.output_tokens == 50
+    assert out.cached_tokens == 10
+    client.chat.completions.create.assert_awaited_once()
+
+
+async def test_extract_atomic_facts_parses_structured_output():
+    client = make_client(_facts_completion("Fact one is here.", "Fact two is here."))
+    out = await extract_atomic_facts("some page text", client=client, model="gpt-4.1-mini")
+    assert isinstance(out, FactExtraction)
+    assert out.facts == ["Fact one is here.", "Fact two is here."]
+
+
+async def test_vision_and_extract_forward_service_tier():
+    """V-L5: service_tier is forwarded onto the chat calls when set, omitted by
+    default."""
+    vc = make_client(make_completion(content="page text"))
+    await transcribe_page(b"\x89PNG", client=vc, model="gpt-5.4-mini", service_tier="flex")
+    assert vc.chat.completions.create.await_args.kwargs["service_tier"] == "flex"
+
+    ec = make_client(_facts_completion("A fact."))
+    await extract_atomic_facts("text", client=ec, model="gpt-5.4-nano")  # default None
+    assert "service_tier" not in ec.chat.completions.create.await_args.kwargs
+
+
+async def test_extract_atomic_facts_blank_text_skips_llm_call():
+    # V-KB4: nothing to extract → no API call, empty result.
+    client = client_with_error(AssertionError("must not call the model on blank text"))
+    out = await extract_atomic_facts("   \n  ", client=client, model="gpt-4.1-mini")
+    assert out.facts == []
+    client.chat.completions.create.assert_not_called()
+
+
+async def test_extract_atomic_facts_drops_empty_and_nonstring():
+    body = json.dumps({"facts": [{"text": "  Kept fact.  "}, {"text": "   "}, {"text": 5}]})
+    client = make_client(make_completion(content=body))
+    out = await extract_atomic_facts("text", client=client, model="gpt-4.1-mini")
+    assert out.facts == ["Kept fact."]
 
 
 # --------------------------------------------------------------------------- #
-# ingest_pdf — DB-backed
+# ingest_pdf — DB-backed, both clients mocked, renderer injected
 # --------------------------------------------------------------------------- #
 
 
-async def test_first_ingest_creates_pdf_source_and_facts(
+async def test_first_ingest_renders_transcribes_extracts(
     db_session: AsyncSession, tmp_path: Path
 ):
     course = await _make_course(db_session)
@@ -83,34 +128,48 @@ async def test_first_ingest_creates_pdf_source_and_facts(
     pdf = tmp_path / "lecture-01.pdf"
     _fake_pdf(pdf, b"%PDF-1.4 fake")
 
-    parser = _forge_parser(
-        [
-            ParsedPage(
-                page=1,
-                text=(
-                    "Glycolysis converts glucose to pyruvate.\n"
-                    "It yields net two ATP per glucose molecule."
-                ),
-            ),
-            ParsedPage(
-                page=2,
-                text="The TCA cycle regenerates oxaloacetate after each turn.",
-            ),
-        ]
+    renderer = _forge_renderer(
+        [RenderedPage(page=1, image_png=b"png-1"), RenderedPage(page=2, image_png=b"png-2")]
+    )
+    # Two pages → two vision calls (transcription) + two extraction calls.
+    vision_client = make_client(
+        make_completion(content="page one text", prompt_tokens=1000, completion_tokens=100),
+        make_completion(content="page two text", prompt_tokens=1000, completion_tokens=100),
+    )
+    extract_client = make_client(
+        _facts_completion(
+            "Glycolysis converts glucose to pyruvate.",
+            "It yields net two ATP per glucose.",
+            prompt_tokens=500, completion_tokens=80, cached_tokens=10,
+        ),
+        _facts_completion(
+            "The TCA cycle regenerates oxaloacetate.",
+            prompt_tokens=500, completion_tokens=80,
+        ),
     )
 
-    report = await ingest_pdf(db_session, course_id=course_id, path=pdf, parser=parser)
+    report = await ingest_pdf(
+        db_session,
+        course_id=course_id,
+        path=pdf,
+        vision_client=vision_client,
+        extract_client=extract_client,
+        renderer=renderer,
+    )
 
     assert isinstance(report, IngestReport)
     assert report.reused_pdf is False
     assert report.pages == 2
     assert report.new_facts == 3
     assert report.dup_facts == 0
+    assert report.extractor_version == EXTRACTOR_VERSION
+    # V-L1: tokens summed across all 4 calls (vision 2×1000 + extract 2×500).
+    assert report.input_tokens == 3000
+    assert report.output_tokens == 360
+    assert report.cached_tokens == 10
 
     pdf_row = (
-        await db_session.execute(
-            select(PdfSource).where(PdfSource.id == report.pdf_source_id)
-        )
+        await db_session.execute(select(PdfSource).where(PdfSource.id == report.pdf_source_id))
     ).scalar_one()
     assert pdf_row.status == "ingested"
     assert pdf_row.ingested_at is not None
@@ -122,8 +181,10 @@ async def test_first_ingest_creates_pdf_source_and_facts(
         )
     ).scalars().all()
     assert len(facts) == 3
-    pages = {f.page for f in facts}
-    assert pages == {1, 2}
+    assert {f.page for f in facts} == {1, 2}
+    # V-KB4: node_id NULL until the categorizer (T50) runs; V-KB3: version stamped.
+    assert all(f.node_id is None for f in facts)
+    assert all(f.extractor_version == EXTRACTOR_VERSION for f in facts)
 
 
 async def test_re_ingest_same_file_is_noop(db_session: AsyncSession, tmp_path: Path):
@@ -131,12 +192,27 @@ async def test_re_ingest_same_file_is_noop(db_session: AsyncSession, tmp_path: P
     course_id = course.id
     pdf = tmp_path / "lecture-dup.pdf"
     _fake_pdf(pdf, b"%PDF-1.4 stable-bytes")
-    parser = _forge_parser(
-        [ParsedPage(page=1, text="Mitochondrial matrix hosts the TCA cycle.")]
-    )
+    renderer = _forge_renderer([RenderedPage(page=1, image_png=b"png-1")])
 
-    r1 = await ingest_pdf(db_session, course_id=course_id, path=pdf, parser=parser)
-    r2 = await ingest_pdf(db_session, course_id=course_id, path=pdf, parser=parser)
+    def _clients():
+        return (
+            make_client(make_completion(content="matrix hosts the TCA cycle")),
+            make_client(_facts_completion("Mitochondrial matrix hosts the TCA cycle.")),
+        )
+
+    v1, e1 = _clients()
+    r1 = await ingest_pdf(
+        db_session, course_id=course_id, path=pdf,
+        vision_client=v1, extract_client=e1, renderer=renderer,
+    )
+    # Second pass: a client that errors if touched proves the SHA short-circuit
+    # returns before any render / API work.
+    boom = client_with_error(AssertionError("re-ingest must not render or call the model"))
+    r2 = await ingest_pdf(
+        db_session, course_id=course_id, path=pdf,
+        vision_client=boom, extract_client=boom,
+        renderer=_forge_renderer([RenderedPage(page=99, image_png=b"never")]),
+    )
 
     assert r1.reused_pdf is False and r1.new_facts == 1
     assert r2.reused_pdf is True
@@ -144,9 +220,7 @@ async def test_re_ingest_same_file_is_noop(db_session: AsyncSession, tmp_path: P
     assert r2.pdf_source_id == r1.pdf_source_id
 
     pdf_rows = (
-        await db_session.execute(
-            select(PdfSource).where(PdfSource.course_id == course_id)
-        )
+        await db_session.execute(select(PdfSource).where(PdfSource.course_id == course_id))
     ).scalars().all()
     assert len(pdf_rows) == 1
 
@@ -154,23 +228,31 @@ async def test_re_ingest_same_file_is_noop(db_session: AsyncSession, tmp_path: P
 async def test_content_hash_dedupes_facts_within_course(
     db_session: AsyncSession, tmp_path: Path
 ):
-    """V-KB1: even if the sentence appears in a different PDF in the same
-    course, the (course_id, content_hash) UQ keeps a single row."""
+    """V-KB1/V-KB4: a fact recurring in a second PDF of the same course maps to
+    the existing row via UQ(course_id, content_hash)."""
 
     course = await _make_course(db_session)
     course_id = course.id
-
     pdf_a = tmp_path / "a.pdf"
     pdf_b = tmp_path / "b.pdf"
     _fake_pdf(pdf_a, b"%PDF-1.4 a")
     _fake_pdf(pdf_b, b"%PDF-1.4 b")
 
     shared = "Insulin is secreted by pancreatic beta cells."
-    parser_a = _forge_parser([ParsedPage(page=1, text=shared)])
-    parser_b = _forge_parser([ParsedPage(page=1, text=shared)])
+    renderer = _forge_renderer([RenderedPage(page=1, image_png=b"png")])
 
-    r1 = await ingest_pdf(db_session, course_id=course_id, path=pdf_a, parser=parser_a)
-    r2 = await ingest_pdf(db_session, course_id=course_id, path=pdf_b, parser=parser_b)
+    r1 = await ingest_pdf(
+        db_session, course_id=course_id, path=pdf_a,
+        vision_client=make_client(make_completion(content="t")),
+        extract_client=make_client(_facts_completion(shared)),
+        renderer=renderer,
+    )
+    r2 = await ingest_pdf(
+        db_session, course_id=course_id, path=pdf_b,
+        vision_client=make_client(make_completion(content="t")),
+        extract_client=make_client(_facts_completion(shared)),
+        renderer=renderer,
+    )
 
     assert r1.new_facts == 1
     assert r2.new_facts == 0
@@ -187,21 +269,15 @@ async def test_content_hash_dedupes_facts_within_course(
     assert len(rows) == 1
 
 
-async def test_real_pdfplumber_smoke(db_session: AsyncSession, tmp_path: Path):
-    """One end-to-end pass exercising the default ``parse_pdf`` parser.
+async def test_render_smoke_real_pymupdf(db_session: AsyncSession, tmp_path: Path):
+    """End-to-end pass over the real PyMuPDF ``render_pages`` (default renderer)
+    with mocked OpenAI clients — exercises rasterization without a real API."""
 
-    Generates a tiny PDF with pypdfium2/pdfplumber's dependency chain so
-    we don't ship a binary fixture into the repo. If pdfplumber yields
-    nothing for this minimal file (some readers do, depending on text
-    extraction support), the test asserts the seam still completes
-    without raising — V-KB1 is about idempotency, not parse quality.
-    """
-
-    pdfplumber = pytest.importorskip("pdfplumber")
-    reportlab = pytest.importorskip(  # pragma: no cover — optional dev dep
-        "reportlab",
-        reason="reportlab not installed; pdf write-side smoke skipped",
+    pytest.importorskip("pymupdf")
+    reportlab = pytest.importorskip(
+        "reportlab", reason="reportlab not installed; render smoke skipped"
     )
+    assert reportlab  # silence unused
     from reportlab.pdfgen import canvas  # type: ignore
 
     course = await _make_course(db_session)
@@ -209,15 +285,22 @@ async def test_real_pdfplumber_smoke(db_session: AsyncSession, tmp_path: Path):
     pdf = tmp_path / "smoke.pdf"
     c = canvas.Canvas(str(pdf))
     c.drawString(72, 720, "Mitochondria are the powerhouse of the cell.")
-    c.drawString(72, 700, "ATP synthase couples proton flow to phosphorylation.")
     c.save()
 
-    report = await ingest_pdf(db_session, course_id=course_id, path=pdf)
+    report = await ingest_pdf(
+        db_session,
+        course_id=course_id,
+        path=pdf,
+        # default renderer = real PyMuPDF; OpenAI still mocked.
+        vision_client=make_client(make_completion(content="rendered page text")),
+        extract_client=make_client(
+            _facts_completion("Mitochondria are the powerhouse of the cell.")
+        ),
+    )
     assert report.reused_pdf is False
-    # Parse quality varies; we only check the seam wrote a PdfSource row.
+    assert report.pages == 1
+    assert report.new_facts == 1
     pdf_row = (
-        await db_session.execute(
-            select(PdfSource).where(PdfSource.id == report.pdf_source_id)
-        )
+        await db_session.execute(select(PdfSource).where(PdfSource.id == report.pdf_source_id))
     ).scalar_one()
     assert pdf_row.status == "ingested"

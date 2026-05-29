@@ -21,7 +21,7 @@ SDK boundary (V16). All write operations only — ``pages.create``,
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
@@ -322,3 +322,84 @@ async def mirror_discriminator_to_notion(
         created_page=created,
         skipped=False,
     )
+
+
+@dataclass
+class PendingSyncReport:
+    nodes_synced: int = 0
+    pages_created: int = 0
+    blocks_appended: int = 0
+    failures: list[str] = field(default_factory=list)
+
+    @property
+    def partial_failure(self) -> bool:
+        return bool(self.failures)
+
+
+async def sync_pending_nodes(
+    session: AsyncSession,
+    *,
+    notion_client: Any,
+    notion_wiki_db_id: str,
+) -> PendingSyncReport:
+    """Mirror every node that owns tagged atomic facts to Notion (T51).
+
+    A fact is mirrorable only once the grounded-tag categorizer (T50) has set
+    its ``node_id`` — so this is empty until tagging runs. For each such node:
+    create the page on first sync (all its facts as initial blocks), else
+    append only facts created since ``notion_pages.last_synced_at`` — the
+    append-only, ⊥-rewrite discipline (V-N1) that keeps re-sync idempotent
+    (V-N2: one page per node). Per-node failures are caught (V41) so one bad
+    node ⊥ aborts the batch; the caller still reaches ``commit()``.
+    """
+
+    node_ids = (
+        await session.execute(
+            select(AtomicFact.node_id).where(AtomicFact.node_id.is_not(None)).distinct()
+        )
+    ).scalars().all()
+
+    report = PendingSyncReport()
+    for nid in node_ids:
+        try:
+            node = (
+                await session.execute(select(OutlineNode).where(OutlineNode.id == nid))
+            ).scalar_one_or_none()
+            if node is None:
+                continue
+            pointer = (
+                await session.execute(select(NotionPage).where(NotionPage.node_id == nid))
+            ).scalar_one_or_none()
+
+            stmt = select(AtomicFact).where(AtomicFact.node_id == nid)
+            if pointer is not None:
+                # Append-only: only facts newer than the last sync (V-N1).
+                stmt = stmt.where(AtomicFact.created_at > pointer.last_synced_at)
+            facts = (await session.execute(stmt.order_by(AtomicFact.id))).scalars().all()
+
+            if not facts and pointer is not None:
+                continue  # nothing new for this node
+
+            sync_report = await sync_node_to_notion(
+                session,
+                notion_client=notion_client,
+                notion_wiki_db_id=notion_wiki_db_id,
+                node=node,
+                facts=list(facts),
+            )
+            report.nodes_synced += 1
+            if sync_report.created_page:
+                report.pages_created += 1
+            report.blocks_appended += sync_report.appended_blocks
+        except Exception as exc:  # noqa: BLE001 — V41 per-node isolation
+            report.failures.append(f"node {nid}: {exc}")
+            _logger.warning("sync_pending_nodes: failed on node %s: %s", nid, exc)
+
+    _logger.info(
+        "sync_pending_nodes: nodes=%d pages_created=%d blocks=%d failures=%d",
+        report.nodes_synced,
+        report.pages_created,
+        report.blocks_appended,
+        len(report.failures),
+    )
+    return report

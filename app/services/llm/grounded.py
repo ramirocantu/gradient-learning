@@ -270,6 +270,7 @@ async def generate_grounded_tags(
     resolved_tagging_model = tagging_model or settings.OPENAI_MODEL
     resolved_calibrator_model = calibrator_model or settings.OPENAI_CALIBRATOR_MODEL
     calibrator_client = calibrator_client or tagging_client
+    service_tier = settings.OPENAI_SERVICE_TIER  # V-L5 Flex (None omits)
 
     # V-L3: nothing to pick from → don't call the model. An empty enum would
     # be an invalid strict schema anyway.
@@ -286,15 +287,18 @@ async def generate_grounded_tags(
     system_text = build_system_prompt(recall_result)
     user_message = _format_user_message(entity_text)
 
-    completion = await tagging_client.chat.completions.create(
-        model=resolved_tagging_model,
-        max_completion_tokens=max_tokens,
-        messages=[
+    create_kwargs: dict[str, Any] = {
+        "model": resolved_tagging_model,
+        "max_completion_tokens": max_tokens,
+        "messages": [
             {"role": "system", "content": system_text},
             {"role": "user", "content": user_message},
         ],
-        response_format=response_format,
-    )
+        "response_format": response_format,
+    }
+    if service_tier is not None:
+        create_kwargs["service_tier"] = service_tier
+    completion = await tagging_client.chat.completions.create(**create_kwargs)
 
     usage = getattr(completion, "usage", None)
     prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
@@ -330,6 +334,7 @@ async def generate_grounded_tags(
             tag_label=tag_label,
             openai_client=calibrator_client,
             model=resolved_calibrator_model,
+            service_tier=service_tier,
         )
         tags.append(
             GroundedTag(

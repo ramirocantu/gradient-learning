@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from app.models.outline import OUTLINE_PATH_DELIMITER
-from app.services.categorizer.outline_lookup import OutlineLookup
+from app.services.outline.lookup import OutlineLookup
 
 
 logger = logging.getLogger(__name__)

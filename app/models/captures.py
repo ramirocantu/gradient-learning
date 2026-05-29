@@ -29,6 +29,7 @@ class RawCapture(Base):
         # source adapter may write captures (uworld = reference adapter).
         Index("ix_raw_captures_qid", "qid"),
         Index("ix_raw_captures_captured_at", "captured_at"),
+        Index("ix_raw_captures_course_id", "course_id"),
         Index(
             "ix_raw_captures_qid_with_warnings",
             "qid",
@@ -38,6 +39,14 @@ class RawCapture(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     source: Mapped[str] = mapped_column(Text, nullable=False, server_default="uworld")
+    # Course this capture was studied under (V-CAP2). SET NULL on course delete —
+    # captures/attempts are user history, ⊥ cascade-wiped with regenerable
+    # course content. NULL = unscoped (pre-course capture or single-course case).
+    course_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("courses.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     qid: Mapped[str] = mapped_column(Text, nullable=False)
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     raw_html: Mapped[str] = mapped_column(Text, nullable=False)
@@ -82,6 +91,7 @@ class Question(Base):
     __table_args__ = (
         Index("ix_questions_passage_id", "passage_id"),
         Index("ix_questions_source", "source"),
+        Index("ix_questions_course_id", "course_id"),
         Index(
             "ix_questions_needs_categorization",
             "id",
@@ -95,6 +105,14 @@ class Question(Base):
     # the T12–T14 reader ports.
     source: Mapped[str] = mapped_column(Text, nullable=False, server_default="uworld")
     qid: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    # Course this question is studied under (V-CAP2). SET NULL on course delete —
+    # questions/attempts are user history, ⊥ cascade-wiped with regenerable
+    # course content. NULL → categorizer single-course fallback (kb/jobs).
+    course_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("courses.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     passage_id: Mapped[Optional[int]] = mapped_column(
         Integer,
         ForeignKey("passages.id", ondelete="SET NULL"),
@@ -103,7 +121,10 @@ class Question(Base):
     stem_html: Mapped[str] = mapped_column(Text, nullable=False)
     stem_plain: Mapped[str] = mapped_column(Text, nullable=False)
     choices: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
-    correct_choice: Mapped[str] = mapped_column(Text, nullable=False)
+    # Nullable (V-CAP1): a deferred-answer capture source may record a question
+    # before its correct answer is known; NULL = answer pending. Extension /
+    # uworld / manual adapters still always supply it on capture.
+    correct_choice: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     explanation_html: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     explanation_plain: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     uworld_aamc_tags: Mapped[Optional[list[str]]] = mapped_column(JSONB, nullable=True)

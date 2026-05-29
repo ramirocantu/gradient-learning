@@ -47,6 +47,10 @@ class AtomicFact(Base):
         Integer, ForeignKey("outline_nodes.id", ondelete="SET NULL"), nullable=True
     )
     content_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    # V-KB3: which extraction prompt/schema version produced this fact.
+    # Parallel to <target>_tags.extractor_version (V-T2). Nullable for rows
+    # written before the vision-ingest redesign (T54).
+    extractor_version: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

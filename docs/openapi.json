@@ -61,6 +61,62 @@
         }
       }
     },
+    "/api/v1/pdf/ingest": {
+      "post": {
+        "summary": "Post Pdf Ingest",
+        "operationId": "post_pdf_ingest_api_v1_pdf_ingest_post",
+        "parameters": [
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_post_pdf_ingest_api_v1_pdf_ingest_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PdfIngestResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/courses": {
       "get": {
         "tags": [
@@ -69,18 +125,46 @@
         "summary": "List Courses",
         "description": "List all courses (slug-ordered). The SPA course picker needs to\nenumerate courses; per V-D1 that read extends the public API rather\nthan a dashboard-private route.",
         "operationId": "list_courses_api_v1_courses_get",
+        "parameters": [
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "additionalProperties": true,
-                    "type": "object"
-                  },
                   "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
                   "title": "Response List Courses Api V1 Courses Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -93,15 +177,33 @@
         ],
         "summary": "Create Course",
         "operationId": "create_course_api_v1_courses_post",
+        "parameters": [
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/CreateCourseBody"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "201": {
@@ -109,8 +211,8 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
                   "type": "object",
+                  "additionalProperties": true,
                   "title": "Response Create Course Api V1 Courses Post"
                 }
               }
@@ -145,6 +247,22 @@
             "schema": {
               "type": "integer",
               "title": "Course Id"
+            }
+          },
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
             }
           }
         ],
@@ -202,6 +320,22 @@
               "type": "integer",
               "title": "Course Id"
             }
+          },
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
           }
         ],
         "responses": {
@@ -230,21 +364,37 @@
         }
       }
     },
-    "/api/v1/admin/questions/{question_id}/recategorize": {
-      "post": {
+    "/api/v1/outline/nodes/{node_id}/mastery": {
+      "get": {
         "tags": [
-          "admin"
+          "outline"
         ],
-        "summary": "Recategorize Question",
-        "operationId": "recategorize_question_api_v1_admin_questions__question_id__recategorize_post",
+        "summary": "Node Mastery",
+        "operationId": "node_mastery_api_v1_outline_nodes__node_id__mastery_get",
         "parameters": [
           {
-            "name": "question_id",
+            "name": "node_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "integer",
-              "title": "Question Id"
+              "title": "Node Id"
+            }
+          },
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
             }
           }
         ],
@@ -256,7 +406,439 @@
                 "schema": {
                   "type": "object",
                   "additionalProperties": true,
-                  "title": "Response Recategorize Question Api V1 Admin Questions  Question Id  Recategorize Post"
+                  "title": "Response Node Mastery Api V1 Outline Nodes  Node Id  Mastery Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/outline/courses/{course_id}/mastery": {
+      "get": {
+        "tags": [
+          "outline"
+        ],
+        "summary": "Course Mastery",
+        "operationId": "course_mastery_api_v1_outline_courses__course_id__mastery_get",
+        "parameters": [
+          {
+            "name": "course_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Course Id"
+            }
+          },
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Course Mastery Api V1 Outline Courses  Course Id  Mastery Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/concept-edges": {
+      "get": {
+        "tags": [
+          "kb-reads"
+        ],
+        "summary": "List Concept Edges",
+        "description": "Concept-edge feed for the connections view. `node_id` matches either\nendpoint. Derived (similarity) and manual edges are both surfaced as-is \u2014\nthe read does not weight or recompute (V-E2).",
+        "operationId": "list_concept_edges_api_v1_concept_edges_get",
+        "parameters": [
+          {
+            "name": "node_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "filter to edges touching this node (src or dst)",
+              "title": "Node Id"
+            },
+            "description": "filter to edges touching this node (src or dst)"
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "'similarity' | 'manual'",
+              "title": "Kind"
+            },
+            "description": "'similarity' | 'manual'"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "title": "Response List Concept Edges Api V1 Concept Edges Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/atomic-facts": {
+      "get": {
+        "tags": [
+          "kb-reads"
+        ],
+        "summary": "List Atomic Facts",
+        "description": "Grounded facts by outline node or PDF source. (`extractor_version` is\nstamped on atomic_fact_tags per \u00a7I, not on the fact row \u2014 surface it via\nthe tag read if a client needs it.)",
+        "operationId": "list_atomic_facts_api_v1_atomic_facts_get",
+        "parameters": [
+          {
+            "name": "node_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Node Id"
+            }
+          },
+          {
+            "name": "pdf_source_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pdf Source Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "title": "Response List Atomic Facts Api V1 Atomic Facts Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/notion/pages": {
+      "get": {
+        "tags": [
+          "kb-reads"
+        ],
+        "summary": "List Notion Pages",
+        "description": "Pointer index for the Notion page-index view. V-N1: reads OUR\n`notion_pages` rows only \u2014 \u22a5 a read-back of Notion content. One page per\nnode (V-N2). `title` is the outline node's name (we keep no local Notion\ncontent copy).",
+        "operationId": "list_notion_pages_api_v1_notion_pages_get",
+        "parameters": [
+          {
+            "name": "node_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Node Id"
+            }
+          },
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "title": "Response List Notion Pages Api V1 Notion Pages Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/pdf-sources": {
+      "get": {
+        "tags": [
+          "kb-reads"
+        ],
+        "summary": "List Pdf Sources",
+        "description": "Ingested-PDF inbox. `facts_count` rolls up atomic_facts per source.",
+        "operationId": "list_pdf_sources_api_v1_pdf_sources_get",
+        "parameters": [
+          {
+            "name": "course_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Course Id"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "x-coach-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Coach-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "title": "Response List Pdf Sources Api V1 Pdf Sources Get"
                 }
               }
             }
@@ -1554,7 +2136,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/AnkiCardOut"
+                    "$ref": "#/components/schemas/AnkiReviewQueueCardOut"
                   },
                   "title": "Response Get Review Queue Api V1 Anki Review Queue Get"
                 }
@@ -2595,6 +3177,13 @@
           "status_label": {
             "type": "string",
             "title": "Status Label"
+          },
+          "reviewed_series": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewedDayOut"
+            },
+            "type": "array",
+            "title": "Reviewed Series"
           }
         },
         "type": "object",
@@ -2606,10 +3195,11 @@
           "daily_minutes_budget",
           "headroom_card_review_pct",
           "headroom_minutes_pct",
-          "status_label"
+          "status_label",
+          "reviewed_series"
         ],
         "title": "AnkiLoadAdherenceOut",
-        "description": "V54 deterministic adherence shape. \u22a5 a `recommended_changes`\nfield per V60 \u2014 advisory lives in the MCP host chat."
+        "description": "V54 deterministic adherence shape. \u22a5 a `recommended_changes`\nfield per V60 \u2014 advisory lives in the MCP host chat. `reviewed_series`\n(T43) is the actual per-day reviewed count over `window_days` \u2014 data,\nnot advisory."
       },
       "AnkiLoadConfigIn": {
         "properties": {
@@ -2762,12 +3352,192 @@
         ],
         "title": "AnkiReviewOut"
       },
+      "AnkiReviewQueueCardOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "anki_card_id": {
+            "type": "integer",
+            "title": "Anki Card Id"
+          },
+          "deck_name": {
+            "type": "string",
+            "title": "Deck Name"
+          },
+          "note_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note Id"
+          },
+          "model_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Name"
+          },
+          "fields_json": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fields Json"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "interval_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interval Days"
+          },
+          "ease": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ease"
+          },
+          "lapses": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lapses"
+          },
+          "queue": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queue"
+          },
+          "sync_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Sync At"
+          },
+          "tags": {
+            "items": {
+              "$ref": "#/components/schemas/AnkiCardTagOut"
+            },
+            "type": "array",
+            "title": "Tags",
+            "default": []
+          },
+          "retention": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retention"
+          },
+          "retrievability": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrievability"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "anki_card_id",
+          "deck_name",
+          "sync_at"
+        ],
+        "title": "AnkiReviewQueueCardOut",
+        "description": "Review-queue card (\u00a7T42 base shape) + per-card review metrics (T43).\n\n`retention` = lifetime true-retention (pass/total over non-learn reviews);\n`retrievability` = forgetting-curve recall estimate. Both None when the\ncard has no qualifying reviews / no scheduled interval. Data-only (V13)."
+      },
+      "Body_post_pdf_ingest_api_v1_pdf_ingest_post": {
+        "properties": {
+          "course_id": {
+            "type": "integer",
+            "title": "Course Id"
+          },
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "course_id",
+          "file"
+        ],
+        "title": "Body_post_pdf_ingest_api_v1_pdf_ingest_post"
+      },
       "CapturePayload": {
         "properties": {
           "source": {
             "type": "string",
             "title": "Source",
             "default": "uworld"
+          },
+          "course_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Course Slug"
           },
           "qid": {
             "type": "string",
@@ -3345,6 +4115,81 @@
           "plain"
         ],
         "title": "PassageCapture"
+      },
+      "PdfIngestResponse": {
+        "properties": {
+          "pdf_source_id": {
+            "type": "integer",
+            "title": "Pdf Source Id"
+          },
+          "pages": {
+            "type": "integer",
+            "title": "Pages"
+          },
+          "new_facts": {
+            "type": "integer",
+            "title": "New Facts"
+          },
+          "dup_facts": {
+            "type": "integer",
+            "title": "Dup Facts"
+          },
+          "reused_pdf": {
+            "type": "boolean",
+            "title": "Reused Pdf"
+          },
+          "extractor_version": {
+            "type": "string",
+            "title": "Extractor Version"
+          },
+          "input_tokens": {
+            "type": "integer",
+            "title": "Input Tokens"
+          },
+          "output_tokens": {
+            "type": "integer",
+            "title": "Output Tokens"
+          },
+          "cached_tokens": {
+            "type": "integer",
+            "title": "Cached Tokens"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "pdf_source_id",
+          "pages",
+          "new_facts",
+          "dup_facts",
+          "reused_pdf",
+          "extractor_version",
+          "input_tokens",
+          "output_tokens",
+          "cached_tokens"
+        ],
+        "title": "PdfIngestResponse",
+        "description": "Result of one ``POST /api/v1/pdf/ingest`` \u2014 mirrors\n``kb.pdf_ingest.IngestReport`` (vision transcription \u2192 atomic facts)."
+      },
+      "ReviewedDayOut": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "title": "Date"
+          },
+          "reviewed": {
+            "type": "integer",
+            "title": "Reviewed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "reviewed"
+        ],
+        "title": "ReviewedDayOut",
+        "description": "One point of the T43 reviewed-count series."
       },
       "ValidationError": {
         "properties": {

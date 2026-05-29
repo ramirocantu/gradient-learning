@@ -36,32 +36,27 @@ class Settings(BaseSettings):
     # process is reachable at a non-default origin.
     BACKEND_BASE_URL: str = "http://localhost:8000"
 
-    # OpenAI model selection (P0 pivot). Single tagging/facts model + a
-    # logprobs-capable calibrator. Per §C, the calibrator MUST be a standard
-    # (non-reasoning) chat model — o-series models don't expose logprobs.
-    # Picked in the T5 spike; override via .env if a re-eval rotates them.
-    OPENAI_MODEL: str = "gpt-4.1-mini"
-    OPENAI_CALIBRATOR_MODEL: str = "gpt-4.1-mini"
+    # OpenAI model selection (V-L5, 2026-05-28). Per-task model pinned by
+    # capability + cost (SPEC §V V-L5): nano for text (tag / extract / calibrate),
+    # mini for vision. The calibrator runs reasoning OFF — logprobs require it on
+    # 5.x; calibrator.grade_yes_no sets reasoning_effort='none'. Override via .env
+    # if a V-L2 re-eval rotates them.
+    OPENAI_MODEL: str = "gpt-5.4-nano"
+    # V-KB3 / V-L5: vision-capable model for PDF page transcription. ⊥ nano (weak
+    # vision poisons downstream); None → fall back to OPENAI_MODEL.
+    OPENAI_VISION_MODEL: str | None = "gpt-5.4-mini"
+    OPENAI_CALIBRATOR_MODEL: str = "gpt-5.4-nano"
     EMBEDDING_MODEL: str = "text-embedding-3-small"
-
-    # Per-call model overrides. Default to OPENAI_MODEL; .env can split them.
-    CATEGORIZER_MODEL: str = "gpt-4.1-mini"
-    CATEGORIZER_CACHE_PATH: Path = _BACKEND_ROOT / "data" / "categorizer-cache.db"
-
-    # Feature extractor (Ticket 4.2). Heavier judgment calls — pin to the
-    # full GPT-4.1 by default; the spike (T5) may bump this to a thinking
-    # model after a re-eval. Override via .env without code change.
-    FEATURE_EXTRACTOR_MODEL: str = "gpt-4.1"
-    FEATURE_EXTRACTOR_CACHE_PATH: Path = _BACKEND_ROOT / "data" / "feature-extractor-cache.db"
-
-    # Insight synthesizer (Ticket 4.5). Sonnet per CLAUDE.md convention.
-    SYNTHESIZER_CACHE_PATH: Path = _BACKEND_ROOT / "data" / "synthesizer-cache.db"
+    # V-L5: async KB jobs run on the Flex processing tier (~50% off Standard),
+    # threaded into every OpenAI chat call (vision / extract / generation /
+    # calibrator). Valid: "flex" | "auto" | "default" | "priority". None omits
+    # the param (older API / unsupported model). Embeddings are NOT covered:
+    # embeddings.create stays synchronous — the Batch-API embedding path was
+    # evaluated + deferred (pennies saved vs a polling subsystem; SPEC §O / V-L5).
+    OPENAI_SERVICE_TIER: str | None = "flex"
 
     # Scheduler (Ticket 6.9b)
     SCHEDULER_ENABLED: bool = True
-    CATEGORIZER_INTERVAL_MINUTES: int = 15
-    CATEGORIZER_PER_RUN_BUDGET_USD: float = 0.50
-    FEATURE_EXTRACTION_INTERVAL_MINUTES: int = 60
 
     # AnkiConnect (SPEC §T1, P11). Read-only HTTP client to a locally running
     # Anki desktop with the AnkiConnect addon. Sync job (T4) hits this URL.
@@ -72,15 +67,6 @@ class Settings(BaseSettings):
     ANKICONNECT_URL: str = "http://127.0.0.1:8765"
     ANKI_DECK_NAME: str = "MileDown"
     ANKI_SYNC_INTERVAL_MINUTES: int = 15
-
-    # Anki topic resolver (SPEC §T32). LLM pass over cards already parsed as
-    # aamc_cc — emits a topic_id suggestion under the parsed CC. Mirrors the
-    # UWorld categorizer pattern (cheap chat model, structured output, SQLite cache).
-    ANKI_TOPIC_RESOLVER_MODEL: str = "gpt-4.1-mini"
-    ANKI_TOPIC_RESOLVER_CACHE_PATH: Path = _BACKEND_ROOT / "data" / "anki-topic-resolver-cache.db"
-    ANKI_TOPIC_RESOLVER_INTERVAL_MINUTES: int = 60
-    ANKI_TOPIC_RESOLVER_PER_RUN_BUDGET_USD: float = 0.50
-    ANKI_TOPIC_RESOLVER_CONFIDENCE_THRESHOLD: float = 0.5
 
     # Anki deck prefix (SPEC §V50, §V58, T73). mcat-coach-created filtered review
     # decks live under `<ANKI_DECK_PREFIX>::review::*`; the AnkiConnect write
@@ -110,6 +96,17 @@ class Settings(BaseSettings):
     PDF_INBOX_DIR: Path = _BACKEND_ROOT / "data" / "pdf_inbox"
     NOTION_API_TOKEN: str | None = None
     NOTION_WIKI_DB_ID: str | None = None
+
+    # T51 KB job cadence. PDF inbox polled for new <slug>/*.pdf; Notion
+    # write-out mirrors tagged atomic facts one-way (V-N1). Both no-op when
+    # their config (OpenAI key / Notion token) is absent.
+    PDF_INGEST_INTERVAL_MINUTES: int = 30
+    NOTION_SYNC_INTERVAL_MINUTES: int = 60
+
+    # T50 LLM4Tag cadence. Embedding gates tagging (recall needs node vectors),
+    # so it runs slightly ahead. Both no-op without an OpenAI key.
+    EMBED_INTERVAL_MINUTES: int = 15
+    GROUNDED_TAG_INTERVAL_MINUTES: int = 20
 
 
 settings = Settings()

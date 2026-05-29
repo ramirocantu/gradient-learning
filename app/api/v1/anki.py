@@ -19,12 +19,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_session, verify_coach_token
 from app.config import settings
-from app.schemas.anki import AnkiCardOut
+from app.schemas.anki import AnkiCardOut, AnkiReviewQueueCardOut
 from app.services.anki.client import AnkiConnectClient
 from app.services.anki.queries import (
     list_cards_for_qid,
     list_review_queue,
 )
+from app.services.anki.review_metrics import retention_by_card, retrievability
 # FENCED (T18, V-RB2, V-O5): topic/CC-scoped helpers consume FENCED
 # `app.services.anki.{queries,state,retention}`. The /cards?topic_id=N and
 # /performance routes below are commented out; their imports are dropped
@@ -104,14 +105,23 @@ async def sync_anki(
 @router.get(
     "/review-queue",
     dependencies=[Depends(verify_coach_token)],
-    response_model=list[AnkiCardOut],
+    response_model=list[AnkiReviewQueueCardOut],
 )
 async def get_review_queue(
     limit: int = Query(50, ge=1, le=200),
     session: AsyncSession = Depends(get_session),
-) -> list[AnkiCardOut]:
+) -> list[AnkiReviewQueueCardOut]:
     rows = await list_review_queue(session, limit=limit)
-    return [AnkiCardOut.model_validate(r) for r in rows]
+    # T43: per-card retention/retrievability. Retention is one grouped query
+    # over the queue's cards (⊥ N+1); retrievability is pure card math.
+    retention_map = await retention_by_card(session, card_ids=[r.id for r in rows])
+    out: list[AnkiReviewQueueCardOut] = []
+    for r in rows:
+        card = AnkiReviewQueueCardOut.model_validate(r)
+        card.retention = retention_map.get(r.id)
+        card.retrievability = retrievability(r)
+        out.append(card)
+    return out
 
 
 @router.get(

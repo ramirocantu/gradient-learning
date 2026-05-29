@@ -16,9 +16,29 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.outline import OUTLINE_PATH_DELIMITER, Course, OutlineNode
-from app.services.categorizer._text import normalize_typographic_punctuation
 
 logger = logging.getLogger(__name__)
+
+
+_TYPOGRAPHIC_TO_ASCII = str.maketrans(
+    {
+        "‘": "'",  # left single quotation mark
+        "’": "'",  # right single quotation mark
+        "“": '"',  # left double quotation mark
+        "”": '"',  # right double quotation mark
+    }
+)
+
+
+def normalize_typographic_punctuation(s: str) -> str:
+    """Map Unicode curly quotes/apostrophes to ASCII equivalents.
+
+    The AAMC outline JSON contains U+2019 in names like "Piaget's stages...".
+    The LLM echoes paths back with U+0027 (straight apostrophe), causing
+    exact-string lookups to fail. Normalize both sides to ASCII.
+    Scope: exactly the four typographic-punctuation codepoints above.
+    """
+    return s.translate(_TYPOGRAPHIC_TO_ASCII)
 
 
 class OutlineNotSeededError(RuntimeError):

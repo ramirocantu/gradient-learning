@@ -198,7 +198,7 @@ async def test_job_last_runs_picks_latest_per_job(db_session):
     merged = build_jobs_health(
         [
             {"job_id": "run_anki_sync", "next_run_time": "2026-01-01T00:00:00+00:00"},
-            {"job_id": "run_categorizer", "next_run_time": None},
+            {"job_id": "run_anki_review", "next_run_time": None},
         ],
         last,
     )

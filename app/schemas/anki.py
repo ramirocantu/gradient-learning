@@ -35,6 +35,18 @@ class AnkiCardOut(BaseModel):
     tags: list[AnkiCardTagOut] = []
 
 
+class AnkiReviewQueueCardOut(AnkiCardOut):
+    """Review-queue card (§T42 base shape) + per-card review metrics (T43).
+
+    `retention` = lifetime true-retention (pass/total over non-learn reviews);
+    `retrievability` = forgetting-curve recall estimate. Both None when the
+    card has no qualifying reviews / no scheduled interval. Data-only (V13).
+    """
+
+    retention: Optional[float] = None
+    retrievability: Optional[float] = None
+
+
 class AnkiStateOut(BaseModel):
     """SPEC §T39 / §V28 / §V37 — raw Anki state buckets for one scope."""
 

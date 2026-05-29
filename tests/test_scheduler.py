@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -29,7 +29,7 @@ async def test_task_run_insert_and_query(test_engine):
     async with Sm() as session:
         now = datetime.now(timezone.utc)
         row = TaskRun(
-            job_name="run_categorizer",
+            job_name="run_anki_sync",
             started_at=now,
             status=TaskRunStatus.running,
             items_processed=0,
@@ -37,9 +37,9 @@ async def test_task_run_insert_and_query(test_engine):
         session.add(row)
         await session.flush()
 
-        result = await session.execute(select(TaskRun).where(TaskRun.job_name == "run_categorizer"))
+        result = await session.execute(select(TaskRun).where(TaskRun.job_name == "run_anki_sync"))
         fetched = result.scalar_one()
-        assert fetched.job_name == "run_categorizer"
+        assert fetched.job_name == "run_anki_sync"
         assert fetched.status == TaskRunStatus.running
         assert fetched.items_processed == 0
         assert fetched.cost_usd is None
@@ -54,7 +54,7 @@ async def test_task_run_status_transition(test_engine):
     async with Sm() as session:
         now = datetime.now(timezone.utc)
         row = TaskRun(
-            job_name="run_feature_extraction",
+            job_name="run_anki_sync",
             started_at=now,
             status=TaskRunStatus.running,
             items_processed=0,
@@ -89,7 +89,7 @@ async def test_trigger_endpoint_404_unknown_job():
 @pytest.mark.asyncio
 async def test_trigger_endpoint_401_no_auth():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        r = await c.post("/api/v1/admin/jobs/run_categorizer/trigger")
+        r = await c.post("/api/v1/admin/jobs/run_anki_sync/trigger")
     assert r.status_code == 401
 
 
@@ -98,14 +98,14 @@ async def test_trigger_endpoint_409_when_inflight():
     import app.scheduler as sched_mod
 
     fake_job = MagicMock()
-    fake_job.id = "run_categorizer"
+    fake_job.id = "run_anki_sync"
 
     with (
-        patch.object(sched_mod, "_inflight", {"run_categorizer"}),
+        patch.object(sched_mod, "_inflight", {"run_anki_sync"}),
         patch.object(sched_mod.scheduler, "get_job", return_value=fake_job),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-            r = await c.post("/api/v1/admin/jobs/run_categorizer/trigger", headers=AUTH)
+            r = await c.post("/api/v1/admin/jobs/run_anki_sync/trigger", headers=AUTH)
     assert r.status_code == 409
 
 
@@ -114,11 +114,11 @@ async def test_list_jobs_endpoint():
     import app.scheduler as sched_mod
 
     fake_job_1 = MagicMock()
-    fake_job_1.id = "run_categorizer"
+    fake_job_1.id = "run_anki_sync"
     fake_job_1.next_run_time = datetime(2026, 5, 16, 12, 0, 0, tzinfo=timezone.utc)
 
     fake_job_2 = MagicMock()
-    fake_job_2.id = "run_feature_extraction"
+    fake_job_2.id = "run_anki_review"
     fake_job_2.next_run_time = datetime(2026, 5, 16, 13, 0, 0, tzinfo=timezone.utc)
 
     with patch.object(sched_mod.scheduler, "get_jobs", return_value=[fake_job_1, fake_job_2]):
@@ -129,87 +129,31 @@ async def test_list_jobs_endpoint():
     data = r.json()
     assert len(data) == 2
     job_ids = {entry["job_id"] for entry in data}
-    assert job_ids == {"run_categorizer", "run_feature_extraction"}
+    assert job_ids == {"run_anki_sync", "run_anki_review"}
 
 
 # --------------------------------------------------------------------------- #
-# Scheduler job function tests
+# T51 — KB jobs registered in the scheduler
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.asyncio
-async def test_run_categorizer_job_succeeds(test_engine):
-    from app.services.categorizer.worker import WorkerSummary
-    from app.scheduler import _do_run_categorizer
-    from sqlalchemy.ext.asyncio import async_sessionmaker
-
-    mock_summary = WorkerSummary(processed=5, total_cost_usd=0.05)
-
-    Sm = async_sessionmaker(test_engine, expire_on_commit=False)
-
-    with (
-        patch("app.scheduler.AsyncSessionLocal", Sm),
-        patch("app.scheduler.build_openai_client"),
-        patch("app.scheduler.CategorizerCache"),
-        patch("app.scheduler.OutlineLookup.load", new_callable=AsyncMock),
-        patch(
-            "app.scheduler.run_categorizer",
-            new_callable=AsyncMock,
-            return_value=mock_summary,
-        ),
-    ):
-        await _do_run_categorizer()
-
-    async with Sm() as session:
-        result = await session.execute(select(TaskRun).where(TaskRun.job_name == "run_categorizer"))
-        row = result.scalar_one()
-        assert row.status == TaskRunStatus.succeeded
-        assert row.items_processed == 5
-
-
-@pytest.mark.asyncio
-async def test_run_categorizer_job_fails(test_engine):
-    from app.scheduler import _do_run_categorizer
-    from sqlalchemy.ext.asyncio import async_sessionmaker
-
-    Sm = async_sessionmaker(test_engine, expire_on_commit=False)
-
-    with (
-        patch("app.scheduler.AsyncSessionLocal", Sm),
-        patch("app.scheduler.build_openai_client"),
-        patch("app.scheduler.CategorizerCache"),
-        patch("app.scheduler.OutlineLookup.load", new_callable=AsyncMock),
-        patch(
-            "app.scheduler.run_categorizer",
-            new_callable=AsyncMock,
-            side_effect=RuntimeError("LLM exploded"),
-        ),
-    ):
-        await _do_run_categorizer()
-
-    async with Sm() as session:
-        result = await session.execute(
-            select(TaskRun)
-            .where(TaskRun.job_name == "run_categorizer")
-            .order_by(TaskRun.started_at.desc())
-        )
-        row = result.scalars().first()
-        assert row is not None
-        assert row.status == TaskRunStatus.failed
-        assert row.error_text is not None
-        assert "LLM exploded" in row.error_text
-
-
-@pytest.mark.asyncio
-async def test_inflight_guard_skips_if_running():
+def test_kb_jobs_registered_on_start():
+    """start_scheduler wires the KB interval jobs: PDF-ingest + Notion-sync
+    (T51) and embed + grounded-tag (T50)."""
     import app.scheduler as sched_mod
 
-    mock_run = AsyncMock()
+    added: list[str] = []
+
+    def _capture(*_args, **kwargs):
+        added.append(kwargs.get("id"))
 
     with (
-        patch.object(sched_mod, "_inflight", {"run_categorizer"}),
-        patch("app.scheduler.run_categorizer", mock_run),
+        patch.object(sched_mod.scheduler, "add_job", side_effect=_capture),
+        patch.object(sched_mod.scheduler, "start"),
     ):
-        await sched_mod.run_categorizer_job()
+        sched_mod.start_scheduler()
 
-    mock_run.assert_not_called()
+    assert "run_pdf_ingest" in added
+    assert "run_notion_sync" in added
+    assert "run_embed" in added
+    assert "run_grounded_tag" in added

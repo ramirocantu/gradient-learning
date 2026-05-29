@@ -44,6 +44,32 @@ async def _build_question_payload(session: AsyncSession, q: Question) -> dict[st
         await session.execute(select(QuestionFeatures).where(QuestionFeatures.question_id == q.id))
     ).scalar_one_or_none()
 
+    # T42 (desktop ¶T5): question review detail. Newest-first attempt history,
+    # the per-choice answer distribution, and the user's most-recent pick.
+    # Data-only — no verdict / heuristic (V-M1); the client/host interprets.
+    attempts = (
+        await session.execute(
+            select(Attempt)
+            .where(Attempt.question_id == q.id)
+            .order_by(Attempt.attempted_at.desc(), Attempt.id.desc())
+        )
+    ).scalars().all()
+
+    answer_distribution: dict[str, int] = {}
+    for a in attempts:
+        answer_distribution[a.selected_choice] = answer_distribution.get(a.selected_choice, 0) + 1
+
+    attempt_history = [
+        {
+            "attempted_at": a.attempted_at.isoformat() if a.attempted_at is not None else None,
+            "is_correct": a.is_correct,
+            "selected_choice": a.selected_choice,
+            "time_seconds": a.time_seconds,
+        }
+        for a in attempts
+    ]
+    picked = attempts[0].selected_choice if attempts else None
+
     return {
         "qid": q.qid,
         "question_id": q.id,
@@ -52,6 +78,9 @@ async def _build_question_payload(session: AsyncSession, q: Question) -> dict[st
         "correct_choice": q.correct_choice,
         "explanation": q.explanation_plain,
         "tags": tags,
+        "picked": picked,
+        "answer_distribution": answer_distribution,
+        "attempt_history": attempt_history,
         "features": (
             {col.name: getattr(features, col.name) for col in features.__table__.columns}
             if features is not None

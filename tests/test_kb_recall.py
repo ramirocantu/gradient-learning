@@ -18,10 +18,13 @@ import uuid as _uuid
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.atomic_fact import AtomicFact
+from app.models.atomic_fact_tag import AtomicFactTag
 from app.models.captures import Question, QuestionTag
 from app.models.concept_edge import ConceptEdge
 from app.models.content_embedding import ContentEmbedding
 from app.models.outline import Course, OutlineNode
+from app.models.pdf_source import PdfSource
 from app.services.kb.embeddings import current_version
 from app.services.kb.recall import (
     Candidate,
@@ -116,6 +119,45 @@ def _tag(
 ) -> QuestionTag:
     return QuestionTag(
         question_id=question_id,
+        node_id=node_id,
+        source=source,
+        confidence=confidence,
+        manual_review=manual_review,
+    )
+
+
+async def _make_fact(
+    session: AsyncSession, *, course_id: int, text: str = "fact text"
+) -> AtomicFact:
+    pdf = PdfSource(
+        course_id=course_id,
+        filename="x.pdf",
+        sha256=_uuid.uuid4().hex,
+        status="ingested",
+    )
+    session.add(pdf)
+    await session.flush()
+    f = AtomicFact(
+        course_id=course_id,
+        pdf_source_id=pdf.id,
+        text=text,
+        content_hash=_uuid.uuid4().hex,
+    )
+    session.add(f)
+    await session.flush()
+    return f
+
+
+def _fact_tag(
+    atomic_fact_id: int,
+    node_id: int,
+    *,
+    source: str,
+    confidence: float | None,
+    manual_review: bool = False,
+) -> AtomicFactTag:
+    return AtomicFactTag(
+        atomic_fact_id=atomic_fact_id,
         node_id=node_id,
         source=source,
         confidence=confidence,
@@ -361,8 +403,9 @@ async def test_exemplars_filter_source_and_manual_review(db_session: AsyncSessio
 
     assert len(result.candidates) == 1
     cand = result.candidates[0]
-    exemplar_qids = {ex.question_id for ex in cand.exemplars}
+    exemplar_qids = {ex.entity_id for ex in cand.exemplars}
     assert exemplar_qids == {q_good.id}
+    assert all(ex.entity_kind == "question" for ex in cand.exemplars)
     assert cand.exemplars[0].text == "good calibrated stem"
 
 
@@ -425,13 +468,172 @@ def test_format_candidates_renders_exemplars():
                 path="root >> a",
                 score=0.9,
                 via="embedding",
-                exemplars=[Exemplar(question_id=7, text="ex stem", confidence=0.88)],
+                exemplars=[
+                    Exemplar(
+                        entity_kind="question",
+                        entity_id=7,
+                        text="ex stem",
+                        score=0.88,
+                    )
+                ],
             )
         ],
     )
     text = format_candidates_for_prompt(res)
-    assert "exemplar (conf=0.88)" in text
+    assert "exemplar [question] (score=0.88)" in text
     assert "ex stem" in text
+
+
+# --------------------------------------------------------------------------- #
+# D — δ floor on embedding candidates
+# --------------------------------------------------------------------------- #
+
+
+async def test_embedding_floor_drops_below_min_score(db_session: AsyncSession):
+    """D: a candidate whose cosine is below ``min_score`` is dropped rather
+    than handed to the LLM as a 'least-bad' pick."""
+
+    course, _, leaves = await _make_course_and_tree(db_session, leaves=2)
+    db_session.add(_emb_row(leaves[0].id, [1.0, 0.0]))   # cosine 1.0 — kept
+    db_session.add(_emb_row(leaves[1].id, [0.1, 1.0]))   # cosine ~0.10 — dropped
+    await db_session.flush()
+
+    result = await retrieve_candidates(
+        db_session,
+        course_id=course.id,
+        query_embedding=[1.0, 0.0],
+        top_k=5,
+        edge_expansion=False,
+        content_expansion=False,
+        min_score=0.25,
+    )
+    assert [c.node_id for c in result.candidates] == [leaves[0].id]
+
+
+# --------------------------------------------------------------------------- #
+# E — edge-expansion cap
+# --------------------------------------------------------------------------- #
+
+
+async def test_edge_expansion_capped_at_top_n(db_session: AsyncSession):
+    """E: the T2T fan-out is bounded so it can't flood the candidate list."""
+
+    course, _, leaves = await _make_course_and_tree(db_session, leaves=7)
+    db_session.add(_emb_row(leaves[0].id, [1.0, 0.0]))   # sole seed
+    await db_session.flush()
+    for i in range(1, 7):  # 6 similarity neighbours of the seed
+        a, b = sorted([leaves[0].id, leaves[i].id])
+        db_session.add(
+            ConceptEdge(src_node_id=a, dst_node_id=b, kind="similarity", score=0.5 + i * 0.01)
+        )
+    await db_session.flush()
+
+    result = await retrieve_candidates(
+        db_session,
+        course_id=course.id,
+        query_embedding=[1.0, 0.0],
+        top_k=5,
+        edge_expansion=True,
+        content_expansion=False,
+        edge_top_n=5,
+    )
+    edge_cands = [c for c in result.candidates if c.via == "edge"]
+    assert len(edge_cands) == 5  # capped at edge_top_n, not all 6
+
+
+# --------------------------------------------------------------------------- #
+# A — C2C2T content recall (content → similar tagged content → its tag)
+# --------------------------------------------------------------------------- #
+
+
+async def test_content_recall_borrows_gold_tag_from_similar_fact(
+    db_session: AsyncSession,
+):
+    """A: a target with NO matching node embedding still recalls the right
+    node via a similar already-tagged fact (gold = manual/schema second hop).
+    This is the path C2T cannot reach."""
+
+    course, _, leaves = await _make_course_and_tree(db_session, leaves=2)
+    target_node = leaves[0].id
+    # Deliberately NO outline_node embeddings → C2T finds nothing.
+    neighbour = await _make_fact(db_session, course_id=course.id, text="neighbour fact")
+    db_session.add(_emb_row(neighbour.id, [1.0, 0.0], entity_kind="atomic_fact"))
+    db_session.add(_fact_tag(neighbour.id, target_node, source="manual", confidence=None))
+    await db_session.flush()
+
+    result = await retrieve_candidates(
+        db_session,
+        course_id=course.id,
+        query_embedding=[1.0, 0.0],
+        edge_expansion=False,
+    )
+
+    cand = next((c for c in result.candidates if c.node_id == target_node), None)
+    assert cand is not None
+    assert cand.via == "content-gold"
+    assert cand.exemplars and cand.exemplars[0].entity_kind == "atomic_fact"
+    assert cand.exemplars[0].entity_id == neighbour.id
+
+
+async def test_content_recall_silver_is_discounted_and_review_gated(
+    db_session: AsyncSession,
+):
+    """A: a prior ``llm`` tag is borrowed as 'silver' but discounted by
+    ``silver_factor``; a ``manual_review`` llm tag is NOT borrowed (echo
+    guard)."""
+
+    course, _, leaves = await _make_course_and_tree(db_session, leaves=2)
+    silver_node, flagged_node = leaves[0].id, leaves[1].id
+
+    n_silver = await _make_fact(db_session, course_id=course.id, text="silver neighbour")
+    db_session.add(_emb_row(n_silver.id, [1.0, 0.0], entity_kind="atomic_fact"))
+    db_session.add(
+        _fact_tag(n_silver.id, silver_node, source="llm", confidence=0.8)
+    )
+
+    n_flagged = await _make_fact(db_session, course_id=course.id, text="flagged neighbour")
+    db_session.add(_emb_row(n_flagged.id, [1.0, 0.0], entity_kind="atomic_fact"))
+    db_session.add(
+        _fact_tag(
+            n_flagged.id, flagged_node, source="llm", confidence=0.95, manual_review=True
+        )
+    )
+    await db_session.flush()
+
+    result = await retrieve_candidates(
+        db_session,
+        course_id=course.id,
+        query_embedding=[1.0, 0.0],
+        edge_expansion=False,
+        silver_factor=0.6,
+    )
+
+    by_node = {c.node_id: c for c in result.candidates}
+    assert silver_node in by_node
+    assert by_node[silver_node].via == "content-silver"
+    # neighbour cosine 1.0 × silver_factor 0.6 → score ~0.6, the discount.
+    assert by_node[silver_node].score == pytest.approx(0.6, abs=1e-6)
+    assert flagged_node not in by_node  # manual_review llm tag ⊥ borrowed
+
+
+async def test_content_recall_excludes_self(db_session: AsyncSession):
+    """A: the target fact must not recall itself as its own neighbour."""
+
+    course, _, leaves = await _make_course_and_tree(db_session, leaves=1)
+    target = await _make_fact(db_session, course_id=course.id, text="the target")
+    db_session.add(_emb_row(target.id, [1.0, 0.0], entity_kind="atomic_fact"))
+    # Give the target a (stale) tag so, if not excluded, it would self-borrow.
+    db_session.add(_fact_tag(target.id, leaves[0].id, source="manual", confidence=None))
+    await db_session.flush()
+
+    result = await retrieve_candidates(
+        db_session,
+        course_id=course.id,
+        query_embedding=[1.0, 0.0],
+        edge_expansion=False,
+        exclude_entity=("atomic_fact", target.id),
+    )
+    assert result.candidates == []
 
 
 # --------------------------------------------------------------------------- #

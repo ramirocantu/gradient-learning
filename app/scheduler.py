@@ -1,4 +1,4 @@
-"""APScheduler background jobs for categorizer and feature extraction.
+"""APScheduler background jobs for Anki sync, assignment, and review.
 
 Jobs write TaskRun rows to Postgres for history/monitoring. An in-flight
 guard prevents concurrent runs of the same job — APScheduler's interval
@@ -14,23 +14,16 @@ from datetime import datetime, timezone
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.config import settings
-from app.services.llm.client import build_openai_client
 from app.database import AsyncSessionLocal
 from app.models.task_run import TaskRun, TaskRunStatus
 from app.services.anki.assignment import run_complete_unlocked, run_unlock_due
 from app.services.anki.review import run_review_due
 from app.services.anki.client import AnkiConnectClient
 from app.services.anki.sync import sync_deck
-from app.services.anki.topic_resolver_cache import AnkiTopicResolverCache
-from app.services.anki.topic_resolver_worker import (
-    make_summary_text as make_anki_topic_summary_text,
-    run as run_anki_topic_resolver,
-)
-from app.services.categorizer.cache import CategorizerCache
-from app.services.categorizer.outline_lookup import OutlineLookup
-from app.services.categorizer.worker import run as run_categorizer
-from app.services.analyzer.cache import FeatureExtractorCache
-from app.services.analyzer.worker import run_extraction
+from app.services.kb.inbox import poll_inbox
+from app.services.kb.jobs import embed_pending, tag_pending
+from app.services.kb.notion import sync_pending_nodes
+from app.services.llm.client import build_openai_client
 
 logger = logging.getLogger(__name__)
 
@@ -38,157 +31,6 @@ _inflight: set[str] = set()
 _lock = asyncio.Lock()
 
 scheduler = AsyncIOScheduler()
-
-
-# --------------------------------------------------------------------------- #
-# Categorizer job
-# --------------------------------------------------------------------------- #
-
-
-async def _do_run_categorizer() -> None:
-    # V41: max_retries=5 absorbs transient OpenAI errors at the SDK layer.
-    client = build_openai_client(max_retries=5)
-    cache = CategorizerCache(settings.CATEGORIZER_CACHE_PATH)
-    run_id: int | None = None
-    try:
-        async with AsyncSessionLocal() as session:
-            row = TaskRun(
-                job_name="run_categorizer",
-                started_at=datetime.now(timezone.utc),
-                status=TaskRunStatus.running,
-                items_processed=0,
-            )
-            session.add(row)
-            await session.flush()
-            run_id = row.id
-            await session.commit()
-
-        async with AsyncSessionLocal() as session:
-            lookup = await OutlineLookup.load(session)
-            summary = await run_categorizer(
-                session,
-                openai_client=client,
-                cache=cache,
-                max_cost_usd=settings.CATEGORIZER_PER_RUN_BUDGET_USD,
-                lookup=lookup,
-            )
-            await session.commit()
-
-        async with AsyncSessionLocal() as session:
-            run_row = await session.get(TaskRun, run_id)
-            if run_row is not None:
-                # V41 amended: partial_failure still ⇒ status='succeeded'. The
-                # error_text surfaces the transient cause so /admin shows it
-                # without paging on a non-fatal blip.
-                run_row.status = TaskRunStatus.succeeded
-                run_row.items_processed = summary.processed
-                run_row.cost_usd = summary.total_cost_usd
-                run_row.finished_at = datetime.now(timezone.utc)
-                if summary.partial_failure and summary.error:
-                    run_row.error_text = (
-                        f"partial: broke on transient API error after "
-                        f"{summary.succeeded} questions — {summary.error}"
-                    )[:2000]
-            await session.commit()
-
-        logger.info("run_categorizer finished: %s", summary.as_text())
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("run_categorizer failed: %s", exc)
-        if run_id is not None:
-            try:
-                async with AsyncSessionLocal() as session:
-                    run_row = await session.get(TaskRun, run_id)
-                    if run_row is not None:
-                        run_row.status = TaskRunStatus.failed
-                        run_row.error_text = str(exc)[:2000]
-                        run_row.finished_at = datetime.now(timezone.utc)
-                    await session.commit()
-            except Exception:  # noqa: BLE001
-                logger.exception("failed to record categorizer failure in task_runs")
-    finally:
-        cache.close()
-
-
-async def run_categorizer_job() -> None:
-    async with _lock:
-        if "run_categorizer" in _inflight:
-            logger.warning("run_categorizer already in-flight, skipping")
-            return
-        _inflight.add("run_categorizer")
-    try:
-        await _do_run_categorizer()
-    finally:
-        async with _lock:
-            _inflight.discard("run_categorizer")
-
-
-# --------------------------------------------------------------------------- #
-# Feature extraction job
-# --------------------------------------------------------------------------- #
-
-
-async def _do_run_feature_extraction() -> None:
-    client = build_openai_client(max_retries=5)
-    cache = FeatureExtractorCache(settings.FEATURE_EXTRACTOR_CACHE_PATH)
-    run_id: int | None = None
-    try:
-        async with AsyncSessionLocal() as session:
-            row = TaskRun(
-                job_name="run_feature_extraction",
-                started_at=datetime.now(timezone.utc),
-                status=TaskRunStatus.running,
-                items_processed=0,
-            )
-            session.add(row)
-            await session.flush()
-            run_id = row.id
-            await session.commit()
-
-        summary = await run_extraction(
-            AsyncSessionLocal,
-            openai_client=client,
-            cache=cache,
-            missed_only=False,
-        )
-
-        async with AsyncSessionLocal() as session:
-            run_row = await session.get(TaskRun, run_id)
-            if run_row is not None:
-                run_row.status = TaskRunStatus.succeeded
-                run_row.items_processed = summary.processed
-                run_row.cost_usd = summary.total_cost_usd
-                run_row.finished_at = datetime.now(timezone.utc)
-            await session.commit()
-
-        logger.info("run_feature_extraction finished: processed=%d", summary.processed)
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("run_feature_extraction failed: %s", exc)
-        if run_id is not None:
-            try:
-                async with AsyncSessionLocal() as session:
-                    run_row = await session.get(TaskRun, run_id)
-                    if run_row is not None:
-                        run_row.status = TaskRunStatus.failed
-                        run_row.error_text = str(exc)[:2000]
-                        run_row.finished_at = datetime.now(timezone.utc)
-                    await session.commit()
-            except Exception:  # noqa: BLE001
-                logger.exception("failed to record feature_extraction failure in task_runs")
-    finally:
-        cache.close()
-
-
-async def run_feature_extraction_job() -> None:
-    async with _lock:
-        if "run_feature_extraction" in _inflight:
-            logger.warning("run_feature_extraction already in-flight, skipping")
-            return
-        _inflight.add("run_feature_extraction")
-    try:
-        await _do_run_feature_extraction()
-    finally:
-        async with _lock:
-            _inflight.discard("run_feature_extraction")
 
 
 # --------------------------------------------------------------------------- #
@@ -263,86 +105,6 @@ async def run_anki_sync_job() -> None:
     finally:
         async with _lock:
             _inflight.discard("run_anki_sync")
-
-
-# --------------------------------------------------------------------------- #
-# Anki topic resolver job (SPEC §T32)
-# --------------------------------------------------------------------------- #
-
-
-async def _do_run_anki_topic_resolver() -> None:
-    # V41 (amended): max_retries≥5 absorbs transient OpenAI errors at the SDK
-    # boundary (429 rate-limit, 5xx, transport blips) before reaching the
-    # worker's per-card try/except.
-    client = build_openai_client(max_retries=5)
-    cache = AnkiTopicResolverCache(settings.ANKI_TOPIC_RESOLVER_CACHE_PATH)
-    run_id: int | None = None
-    try:
-        async with AsyncSessionLocal() as session:
-            row = TaskRun(
-                job_name="run_anki_topic_resolver",
-                started_at=datetime.now(timezone.utc),
-                status=TaskRunStatus.running,
-                items_processed=0,
-            )
-            session.add(row)
-            await session.flush()
-            run_id = row.id
-            await session.commit()
-
-        async with AsyncSessionLocal() as session:
-            summary = await run_anki_topic_resolver(
-                session,
-                openai_client=client,
-                cache=cache,
-                max_cost_usd=settings.ANKI_TOPIC_RESOLVER_PER_RUN_BUDGET_USD,
-            )
-            await session.commit()
-
-        async with AsyncSessionLocal() as session:
-            run_row = await session.get(TaskRun, run_id)
-            if run_row is not None:
-                run_row.status = TaskRunStatus.succeeded
-                run_row.items_processed = summary.persisted
-                run_row.cost_usd = summary.total_cost_usd
-                run_row.finished_at = datetime.now(timezone.utc)
-                # §V41: surface partial-failure so /admin run history shows it.
-                if summary.partial_failure and summary.error:
-                    run_row.error_text = (
-                        f"partial: broke on transient API error after "
-                        f"{summary.processed} cards — {summary.error}"
-                    )[:2000]
-            await session.commit()
-
-        logger.info("run_anki_topic_resolver finished: %s", make_anki_topic_summary_text(summary))
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("run_anki_topic_resolver failed: %s", exc)
-        if run_id is not None:
-            try:
-                async with AsyncSessionLocal() as session:
-                    run_row = await session.get(TaskRun, run_id)
-                    if run_row is not None:
-                        run_row.status = TaskRunStatus.failed
-                        run_row.error_text = str(exc)[:2000]
-                        run_row.finished_at = datetime.now(timezone.utc)
-                    await session.commit()
-            except Exception:  # noqa: BLE001
-                logger.exception("failed to record anki_topic_resolver failure in task_runs")
-    finally:
-        cache.close()
-
-
-async def run_anki_topic_resolver_job() -> None:
-    async with _lock:
-        if "run_anki_topic_resolver" in _inflight:
-            logger.warning("run_anki_topic_resolver already in-flight, skipping")
-            return
-        _inflight.add("run_anki_topic_resolver")
-    try:
-        await _do_run_anki_topic_resolver()
-    finally:
-        async with _lock:
-            _inflight.discard("run_anki_topic_resolver")
 
 
 # --------------------------------------------------------------------------- #
@@ -583,6 +345,397 @@ async def run_anki_review_job() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# PDF inbox ingest job (T51, V-KB1, V41)
+# --------------------------------------------------------------------------- #
+
+
+async def _do_run_pdf_ingest() -> None:
+    """Poll ``PDF_INBOX_DIR/<slug>/*.pdf`` → vision-ingest each (V-KB1).
+
+    Skips (no-op, ``succeeded``) when no OpenAI key is configured — ingest
+    needs the vision + extraction calls. V41: ``poll_inbox`` isolates per-file
+    failures into ``report.failures`` so the run still reaches ``commit()`` and
+    is marked ``succeeded`` (partial), resuming next tick via the SHA filter.
+    """
+    run_id: int | None = None
+    try:
+        async with AsyncSessionLocal() as session:
+            row = TaskRun(
+                job_name="run_pdf_ingest",
+                started_at=datetime.now(timezone.utc),
+                status=TaskRunStatus.running,
+                items_processed=0,
+            )
+            session.add(row)
+            await session.flush()
+            run_id = row.id
+            await session.commit()
+
+        if not settings.OPENAI_API_KEY:
+            async with AsyncSessionLocal() as session:
+                run_row = await session.get(TaskRun, run_id)
+                if run_row is not None:
+                    run_row.status = TaskRunStatus.succeeded
+                    run_row.error_text = "openai unconfigured — pdf ingest skipped"
+                    run_row.finished_at = datetime.now(timezone.utc)
+                await session.commit()
+            logger.info("run_pdf_ingest: OPENAI_API_KEY unset; skipping")
+            return
+
+        client = build_openai_client()
+        async with AsyncSessionLocal() as session:
+            report = await poll_inbox(
+                session,
+                vision_client=client,
+                extract_client=client,
+                inbox_dir=settings.PDF_INBOX_DIR,
+            )
+            await session.commit()
+
+        async with AsyncSessionLocal() as session:
+            run_row = await session.get(TaskRun, run_id)
+            if run_row is not None:
+                run_row.status = TaskRunStatus.succeeded
+                run_row.items_processed = report.new_facts
+                if report.failures or report.files_skipped:
+                    run_row.error_text = (
+                        f"ingested={report.files_ingested} reused={report.files_reused} "
+                        f"skipped={report.files_skipped} failures={len(report.failures)}"
+                    )[:2000]
+                run_row.finished_at = datetime.now(timezone.utc)
+            await session.commit()
+
+        logger.info(
+            "run_pdf_ingest finished: seen=%d ingested=%d reused=%d skipped=%d "
+            "new_facts=%d failures=%d",
+            report.files_seen,
+            report.files_ingested,
+            report.files_reused,
+            report.files_skipped,
+            report.new_facts,
+            len(report.failures),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("run_pdf_ingest failed: %s", exc)
+        if run_id is not None:
+            try:
+                async with AsyncSessionLocal() as session:
+                    run_row = await session.get(TaskRun, run_id)
+                    if run_row is not None:
+                        run_row.status = TaskRunStatus.failed
+                        run_row.error_text = str(exc)[:2000]
+                        run_row.finished_at = datetime.now(timezone.utc)
+                    await session.commit()
+            except Exception:  # noqa: BLE001
+                logger.exception("failed to record pdf_ingest failure in task_runs")
+
+
+async def run_pdf_ingest_job() -> None:
+    async with _lock:
+        if "run_pdf_ingest" in _inflight:
+            logger.warning("run_pdf_ingest already in-flight, skipping")
+            return
+        _inflight.add("run_pdf_ingest")
+    try:
+        await _do_run_pdf_ingest()
+    finally:
+        async with _lock:
+            _inflight.discard("run_pdf_ingest")
+
+
+# --------------------------------------------------------------------------- #
+# Notion write-out job (T51, V-N1, V-N2, V41)
+# --------------------------------------------------------------------------- #
+
+
+async def _do_run_notion_sync() -> None:
+    """One-way mirror tagged atomic facts → Notion (V-N1, V-N2).
+
+    Skips (no-op, ``succeeded``) when Notion is unconfigured. Empty until the
+    categorizer (T50) sets ``atomic_facts.node_id`` — only tagged facts have a
+    node page to live on. V41: per-node failures isolated; run still
+    ``succeeded`` (partial).
+    """
+    run_id: int | None = None
+    notion_client = None
+    try:
+        async with AsyncSessionLocal() as session:
+            row = TaskRun(
+                job_name="run_notion_sync",
+                started_at=datetime.now(timezone.utc),
+                status=TaskRunStatus.running,
+                items_processed=0,
+            )
+            session.add(row)
+            await session.flush()
+            run_id = row.id
+            await session.commit()
+
+        if not settings.NOTION_API_TOKEN or not settings.NOTION_WIKI_DB_ID:
+            async with AsyncSessionLocal() as session:
+                run_row = await session.get(TaskRun, run_id)
+                if run_row is not None:
+                    run_row.status = TaskRunStatus.succeeded
+                    run_row.error_text = "notion unconfigured — sync skipped"
+                    run_row.finished_at = datetime.now(timezone.utc)
+                await session.commit()
+            logger.info("run_notion_sync: NOTION_API_TOKEN/WIKI_DB_ID unset; skipping")
+            return
+
+        from notion_client import AsyncClient
+
+        notion_client = AsyncClient(auth=settings.NOTION_API_TOKEN)
+        async with AsyncSessionLocal() as session:
+            report = await sync_pending_nodes(
+                session,
+                notion_client=notion_client,
+                notion_wiki_db_id=settings.NOTION_WIKI_DB_ID,
+            )
+            await session.commit()
+
+        async with AsyncSessionLocal() as session:
+            run_row = await session.get(TaskRun, run_id)
+            if run_row is not None:
+                run_row.status = TaskRunStatus.succeeded
+                run_row.items_processed = report.nodes_synced
+                if report.failures:
+                    run_row.error_text = (
+                        f"nodes={report.nodes_synced} pages_created={report.pages_created} "
+                        f"blocks={report.blocks_appended} failures={len(report.failures)}"
+                    )[:2000]
+                run_row.finished_at = datetime.now(timezone.utc)
+            await session.commit()
+
+        logger.info(
+            "run_notion_sync finished: nodes=%d pages_created=%d blocks=%d failures=%d",
+            report.nodes_synced,
+            report.pages_created,
+            report.blocks_appended,
+            len(report.failures),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("run_notion_sync failed: %s", exc)
+        if run_id is not None:
+            try:
+                async with AsyncSessionLocal() as session:
+                    run_row = await session.get(TaskRun, run_id)
+                    if run_row is not None:
+                        run_row.status = TaskRunStatus.failed
+                        run_row.error_text = str(exc)[:2000]
+                        run_row.finished_at = datetime.now(timezone.utc)
+                    await session.commit()
+            except Exception:  # noqa: BLE001
+                logger.exception("failed to record notion_sync failure in task_runs")
+    finally:
+        if notion_client is not None:
+            try:
+                await notion_client.aclose()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+async def run_notion_sync_job() -> None:
+    async with _lock:
+        if "run_notion_sync" in _inflight:
+            logger.warning("run_notion_sync already in-flight, skipping")
+            return
+        _inflight.add("run_notion_sync")
+    try:
+        await _do_run_notion_sync()
+    finally:
+        async with _lock:
+            _inflight.discard("run_notion_sync")
+
+
+# --------------------------------------------------------------------------- #
+# Embedding job (T50, V-E1, V41)
+# --------------------------------------------------------------------------- #
+
+
+async def _do_run_embed() -> None:
+    """Embed un-embedded outline_nodes / atomic_facts / questions (V-E1).
+
+    No-op (``succeeded``) without an OpenAI key. V41: ``embed_pending``
+    isolates per-item failures so the run still commits + succeeds (partial).
+    Outline-node vectors are the recall candidate index, so this gates
+    tagging — it runs on a slightly tighter interval than the tag job.
+    """
+    run_id: int | None = None
+    try:
+        async with AsyncSessionLocal() as session:
+            row = TaskRun(
+                job_name="run_embed",
+                started_at=datetime.now(timezone.utc),
+                status=TaskRunStatus.running,
+                items_processed=0,
+            )
+            session.add(row)
+            await session.flush()
+            run_id = row.id
+            await session.commit()
+
+        if not settings.OPENAI_API_KEY:
+            async with AsyncSessionLocal() as session:
+                run_row = await session.get(TaskRun, run_id)
+                if run_row is not None:
+                    run_row.status = TaskRunStatus.succeeded
+                    run_row.error_text = "openai unconfigured — embed skipped"
+                    run_row.finished_at = datetime.now(timezone.utc)
+                await session.commit()
+            logger.info("run_embed: OPENAI_API_KEY unset; skipping")
+            return
+
+        client = build_openai_client()
+        async with AsyncSessionLocal() as session:
+            report = await embed_pending(session, openai_client=client)
+            await session.commit()
+
+        async with AsyncSessionLocal() as session:
+            run_row = await session.get(TaskRun, run_id)
+            if run_row is not None:
+                run_row.status = TaskRunStatus.succeeded
+                run_row.items_processed = report.embedded
+                if report.failures:
+                    run_row.error_text = (
+                        f"embedded={report.embedded} reused={report.reused} "
+                        f"failures={len(report.failures)}"
+                    )[:2000]
+                run_row.finished_at = datetime.now(timezone.utc)
+            await session.commit()
+
+        logger.info(
+            "run_embed finished: embedded=%d reused=%d failures=%d",
+            report.embedded,
+            report.reused,
+            len(report.failures),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("run_embed failed: %s", exc)
+        if run_id is not None:
+            try:
+                async with AsyncSessionLocal() as session:
+                    run_row = await session.get(TaskRun, run_id)
+                    if run_row is not None:
+                        run_row.status = TaskRunStatus.failed
+                        run_row.error_text = str(exc)[:2000]
+                        run_row.finished_at = datetime.now(timezone.utc)
+                    await session.commit()
+            except Exception:  # noqa: BLE001
+                logger.exception("failed to record embed failure in task_runs")
+
+
+async def run_embed_job() -> None:
+    async with _lock:
+        if "run_embed" in _inflight:
+            logger.warning("run_embed already in-flight, skipping")
+            return
+        _inflight.add("run_embed")
+    try:
+        await _do_run_embed()
+    finally:
+        async with _lock:
+            _inflight.discard("run_embed")
+
+
+# --------------------------------------------------------------------------- #
+# Grounded-tag job — the categorizer (T50, V-L3, V69, V-T2/V-T3, V41)
+# --------------------------------------------------------------------------- #
+
+
+async def _do_run_grounded_tag() -> None:
+    """Categorize untagged atomic_facts + single-course questions (V-L3).
+
+    Recall → grounded pick → inline V69 calibration → persist
+    (``atomic_facts.node_id`` denormalized for the notion + read paths). No-op
+    (``succeeded``) without an OpenAI key; empty until embeddings exist
+    (recall returns no candidates → grounded no-ops). V41: per-entity failures
+    isolated; run still succeeds (partial).
+    """
+    run_id: int | None = None
+    try:
+        async with AsyncSessionLocal() as session:
+            row = TaskRun(
+                job_name="run_grounded_tag",
+                started_at=datetime.now(timezone.utc),
+                status=TaskRunStatus.running,
+                items_processed=0,
+            )
+            session.add(row)
+            await session.flush()
+            run_id = row.id
+            await session.commit()
+
+        if not settings.OPENAI_API_KEY:
+            async with AsyncSessionLocal() as session:
+                run_row = await session.get(TaskRun, run_id)
+                if run_row is not None:
+                    run_row.status = TaskRunStatus.succeeded
+                    run_row.error_text = "openai unconfigured — grounded tag skipped"
+                    run_row.finished_at = datetime.now(timezone.utc)
+                await session.commit()
+            logger.info("run_grounded_tag: OPENAI_API_KEY unset; skipping")
+            return
+
+        client = build_openai_client()
+        async with AsyncSessionLocal() as session:
+            report = await tag_pending(
+                session, tagging_client=client, calibrator_client=client
+            )
+            await session.commit()
+
+        async with AsyncSessionLocal() as session:
+            run_row = await session.get(TaskRun, run_id)
+            if run_row is not None:
+                run_row.status = TaskRunStatus.succeeded
+                run_row.items_processed = report.facts_tagged + report.questions_tagged
+                notes = (
+                    f"facts={report.facts_tagged} q={report.questions_tagged} "
+                    f"tags={report.tags_persisted} flagged={report.manual_review_flagged} "
+                    f"no_emb={report.facts_skipped_no_embedding} "
+                    f"q_skipped={report.questions_skipped} failures={len(report.failures)}"
+                )
+                if report.failures or report.facts_skipped_no_embedding or report.questions_skipped:
+                    run_row.error_text = notes[:2000]
+                run_row.finished_at = datetime.now(timezone.utc)
+            await session.commit()
+
+        logger.info(
+            "run_grounded_tag finished: facts=%d q=%d tags=%d flagged=%d failures=%d",
+            report.facts_tagged,
+            report.questions_tagged,
+            report.tags_persisted,
+            report.manual_review_flagged,
+            len(report.failures),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("run_grounded_tag failed: %s", exc)
+        if run_id is not None:
+            try:
+                async with AsyncSessionLocal() as session:
+                    run_row = await session.get(TaskRun, run_id)
+                    if run_row is not None:
+                        run_row.status = TaskRunStatus.failed
+                        run_row.error_text = str(exc)[:2000]
+                        run_row.finished_at = datetime.now(timezone.utc)
+                    await session.commit()
+            except Exception:  # noqa: BLE001
+                logger.exception("failed to record grounded_tag failure in task_runs")
+
+
+async def run_grounded_tag_job() -> None:
+    async with _lock:
+        if "run_grounded_tag" in _inflight:
+            logger.warning("run_grounded_tag already in-flight, skipping")
+            return
+        _inflight.add("run_grounded_tag")
+    try:
+        await _do_run_grounded_tag()
+    finally:
+        async with _lock:
+            _inflight.discard("run_grounded_tag")
+
+
+# --------------------------------------------------------------------------- #
 # Scheduler lifecycle
 # --------------------------------------------------------------------------- #
 
@@ -591,35 +744,10 @@ def start_scheduler() -> None:
     if not settings.SCHEDULER_ENABLED:
         return
     scheduler.add_job(
-        run_categorizer_job,
-        "interval",
-        minutes=settings.CATEGORIZER_INTERVAL_MINUTES,
-        id="run_categorizer",
-        replace_existing=True,
-    )
-    # FENCED (T17, V-RB1, V-O5): run_feature_extraction_job consumes the
-    # FENCED `app.services.analyzer.extract_features_for_question`. The job
-    # itself stays defined (imports + helpers remain usable for direct
-    # invocation under test), but no scheduler entry is registered.
-    # scheduler.add_job(
-    #     run_feature_extraction_job,
-    #     "interval",
-    #     minutes=settings.FEATURE_EXTRACTION_INTERVAL_MINUTES,
-    #     id="run_feature_extraction",
-    #     replace_existing=True,
-    # )
-    scheduler.add_job(
         run_anki_sync_job,
         "interval",
         minutes=settings.ANKI_SYNC_INTERVAL_MINUTES,
         id="run_anki_sync",
-        replace_existing=True,
-    )
-    scheduler.add_job(
-        run_anki_topic_resolver_job,
-        "interval",
-        minutes=settings.ANKI_TOPIC_RESOLVER_INTERVAL_MINUTES,
-        id="run_anki_topic_resolver",
         replace_existing=True,
     )
     scheduler.add_job(
@@ -642,6 +770,34 @@ def start_scheduler() -> None:
         "interval",
         minutes=settings.ANKI_REVIEW_PUSH_INTERVAL_MINUTES,
         id="run_anki_review",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        run_pdf_ingest_job,
+        "interval",
+        minutes=settings.PDF_INGEST_INTERVAL_MINUTES,
+        id="run_pdf_ingest",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        run_notion_sync_job,
+        "interval",
+        minutes=settings.NOTION_SYNC_INTERVAL_MINUTES,
+        id="run_notion_sync",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        run_embed_job,
+        "interval",
+        minutes=settings.EMBED_INTERVAL_MINUTES,
+        id="run_embed",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        run_grounded_tag_job,
+        "interval",
+        minutes=settings.GROUNDED_TAG_INTERVAL_MINUTES,
+        id="run_grounded_tag",
         replace_existing=True,
     )
     scheduler.start()

@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -26,9 +26,20 @@ class AnkiLoadConfigOut(BaseModel):
     updated_at: datetime
 
 
+class ReviewedDayOut(BaseModel):
+    """One point of the T43 reviewed-count series."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    date: date
+    reviewed: int
+
+
 class AnkiLoadAdherenceOut(BaseModel):
     """V54 deterministic adherence shape. ⊥ a `recommended_changes`
-    field per V60 — advisory lives in the MCP host chat."""
+    field per V60 — advisory lives in the MCP host chat. `reviewed_series`
+    (T43) is the actual per-day reviewed count over `window_days` — data,
+    not advisory."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -40,3 +51,4 @@ class AnkiLoadAdherenceOut(BaseModel):
     headroom_card_review_pct: float
     headroom_minutes_pct: float
     status_label: str
+    reviewed_series: list[ReviewedDayOut]

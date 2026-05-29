@@ -5,7 +5,9 @@ substrate tables and the outside world:
 
 - ``embeddings`` — OpenAI embeddings API → ``content_embeddings``
 - ``similarity`` — cosine over node embeddings → ``concept_edges`` (V-E2)
-- ``pdf_ingest`` — pdfplumber → ``pdf_sources`` + ``atomic_facts`` (V-KB1)
+- ``pdf_ingest`` — PyMuPDF render → OpenAI vision transcription → OpenAI
+  structured-output fact extraction → ``pdf_sources`` + ``atomic_facts``
+  (V-KB1, V-KB3, V-KB4)
 - ``notion``    — notion-client → ``notion_pages`` (V-N1, V-N2)
 
 Read-side:

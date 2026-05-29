@@ -1,11 +1,10 @@
 """Tests for the shared LlmCacheBase (Phase 9.5 R.2d).
 
-The base class subsumes the connection lifecycle + maintenance ops
-shared across CategorizerCache, FeatureExtractorCache, and
-SynthesizerCache. Per-cache `get`/`put` overrides are exercised by the
-existing pre-R.2d behavior tests (test_categorizer_cache.py,
-test_feature_extractor.py, test_synthesizer.py) — those remain the
-canonical regression guard for serialization behavior.
+The base class subsumes the connection lifecycle + maintenance ops that
+were once shared across the concrete LLM caches. Those concrete caches
+(CategorizerCache, FeatureExtractorCache, SynthesizerCache) were deleted
+in T53 along with the legacy categorizer/analyzer; the base survives and
+is exercised here directly via a minimal subclass.
 """
 
 from __future__ import annotations
@@ -13,9 +12,6 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from app.services.analyzer.cache import FeatureExtractorCache
-from app.services.analyzer.synthesizer_cache import SynthesizerCache
-from app.services.categorizer.cache import CategorizerCache
 from app.services.llm.cache import LlmCacheBase
 
 
@@ -107,132 +103,5 @@ def test_subclasses_share_clear_and_lookup_cost(tmp_path: Path):
         assert cache.get("k3", "v2") == "p3"
         # v1 entries are gone.
         assert cache.get("k1", "v1") is None
-    finally:
-        cache.close()
-
-
-def test_categorizer_cache_inherits_base(tmp_path: Path):
-    """CategorizerCache inherits from LlmCacheBase; round-trip still works.
-
-    The existing test_categorizer_cache.py is the deeper regression guard;
-    this case only confirms the inheritance shape + that the base's
-    maintenance methods are reachable via a subclass instance.
-    """
-    assert issubclass(CategorizerCache, LlmCacheBase)
-    cache = CategorizerCache(tmp_path / "cat.db")
-    try:
-        # The base-owned maintenance methods are reachable.
-        assert cache.stats()["total_entries"] == 0
-        assert cache.lookup_cost("anything") == 0.0
-        assert cache.clear() == 0
-        # The extras column from EXTRA_COLUMNS_DDL landed on disk.
-        conn = sqlite3.connect(str(cache.path))
-        try:
-            cols = {row[1] for row in conn.execute("PRAGMA table_info(llm_categorizer_cache)")}
-        finally:
-            conn.close()
-        assert "cached_input_tokens" in cols
-        assert "result_json" in cols
-    finally:
-        cache.close()
-
-
-def test_extractor_cache_inherits_base(tmp_path: Path):
-    """FeatureExtractorCache inherits from LlmCacheBase; no extras column."""
-    assert issubclass(FeatureExtractorCache, LlmCacheBase)
-    cache = FeatureExtractorCache(tmp_path / "fc.db")
-    try:
-        assert cache.stats()["total_entries"] == 0
-        assert cache.lookup_cost("anything") == 0.0
-        conn = sqlite3.connect(str(cache.path))
-        try:
-            cols = {
-                row[1] for row in conn.execute("PRAGMA table_info(llm_feature_extractor_cache)")
-            }
-        finally:
-            conn.close()
-        # The feature-extractor table omits cached_input_tokens (R.0 §2.b).
-        assert "cached_input_tokens" not in cols
-        assert "result_json" in cols
-    finally:
-        cache.close()
-
-
-def test_synthesizer_cache_inherits_base(tmp_path: Path):
-    """SynthesizerCache inherits; payload column is `markdown`, not `result_json`."""
-    assert issubclass(SynthesizerCache, LlmCacheBase)
-    cache = SynthesizerCache(tmp_path / "synth.db")
-    try:
-        assert cache.stats()["total_entries"] == 0
-        assert cache.lookup_cost("anything") == 0.0
-        conn = sqlite3.connect(str(cache.path))
-        try:
-            cols = {row[1] for row in conn.execute("PRAGMA table_info(llm_synthesizer_cache)")}
-        finally:
-            conn.close()
-        assert "markdown" in cols
-        assert "result_json" not in cols
-    finally:
-        cache.close()
-
-
-def test_existing_sqlite_file_still_readable(tmp_path: Path):
-    """A pre-R.2d-shape SQLite file opens cleanly under the refactored cache.
-
-    Construct a file with the literal pre-R.2d categorizer DDL (no
-    `DEFAULT 0` on cached_input_tokens), then point a refactored
-    CategorizerCache at it. The base's `_ensure_schema` must be a no-op
-    (CREATE TABLE IF NOT EXISTS), and reads/writes must still work.
-    """
-    db_path = tmp_path / "preexisting-categorizer-cache.db"
-    # Literal pre-R.2d DDL from the previous categorizer/cache.py.
-    pre_r2d_ddl = """
-    CREATE TABLE IF NOT EXISTS llm_categorizer_cache (
-      cache_key TEXT PRIMARY KEY,
-      result_json TEXT NOT NULL,
-      extractor_version TEXT NOT NULL,
-      model TEXT NOT NULL,
-      input_tokens INTEGER NOT NULL,
-      output_tokens INTEGER NOT NULL,
-      cached_input_tokens INTEGER NOT NULL,
-      cost_estimate_usd REAL NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE INDEX IF NOT EXISTS idx_extractor_version
-      ON llm_categorizer_cache (extractor_version);
-    """
-    pre_conn = sqlite3.connect(str(db_path))
-    pre_conn.executescript(pre_r2d_ddl)
-    # Insert a row directly so we can confirm post-refactor reads see it.
-    pre_conn.execute(
-        "INSERT INTO llm_categorizer_cache "
-        "(cache_key, result_json, extractor_version, model, "
-        " input_tokens, output_tokens, cached_input_tokens, "
-        " cost_estimate_usd, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
-        (
-            "pre-existing-key",
-            '{"suggestions":[],"primary_aamc_section":null}',
-            "v1",
-            "m1",
-            100,
-            50,
-            0,
-            0.0125,
-        ),
-    )
-    pre_conn.commit()
-    pre_conn.close()
-
-    # The refactored CategorizerCache must open without raising and see
-    # the row via the base's stats() + lookup_cost().
-    cache = CategorizerCache(db_path)
-    try:
-        stats = cache.stats()
-        assert stats["total_entries"] == 1
-        assert stats["by_version"] == {"v1": 1}
-        assert stats["by_model"] == {"m1": 1}
-        assert abs(stats["total_cost_saved_usd"] - 0.0125) < 1e-9
-        assert cache.lookup_cost("pre-existing-key") == 0.0125
     finally:
         cache.close()

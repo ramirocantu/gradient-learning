@@ -103,12 +103,16 @@ async def test_get_load_adherence_shape_matches_v54(
         "headroom_card_review_pct",
         "headroom_minutes_pct",
         "status_label",
+        "reviewed_series",  # T43 data series (not advisory)
     }
     assert set(body.keys()) == expected_keys
     # V60: payload must not carry advisory.
     assert "recommended_changes" not in body
     assert body["window_days"] == 30
     assert body["status_label"] == "feasible"  # empty state, no load
+    # T43: dense series, one point per day in the window.
+    assert len(body["reviewed_series"]) == 30
+    assert set(body["reviewed_series"][0].keys()) == {"date", "reviewed"}
 
 
 async def test_get_load_adherence_window_days_query(

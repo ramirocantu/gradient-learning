@@ -22,7 +22,17 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.outline import Course, OutlineNode
+
+_AUTH = {"X-Coach-Token": settings.COACH_TOKEN}
+
+
+@pytest.fixture(autouse=True)
+def _send_coach_token(client: AsyncClient) -> None:
+    """The whole `/api/v1/courses` + outline router is X-Coach-Token gated;
+    attach the token to every request in this module."""
+    client.headers.update(_AUTH)
 
 
 def _payload(slug: str = "t21-course", name: str = "T21 Course") -> dict[str, Any]:
@@ -303,3 +313,17 @@ async def test_read_outline_returns_full_tree_in_depth_order(
 async def test_read_outline_unknown_course_returns_404(client: AsyncClient) -> None:
     r = await client.get("/api/v1/courses/999999/outline")
     assert r.status_code == 404
+
+
+# ---------- auth gate (whole router) ----------
+
+
+@pytest.mark.asyncio
+async def test_outline_router_requires_coach_token(client: AsyncClient) -> None:
+    """No token → 401/403 across the router (read + write)."""
+    client.headers.pop("X-Coach-Token", None)
+    assert (await client.get("/api/v1/courses")).status_code in (401, 403)
+    assert (
+        await client.post("/api/v1/courses", json={"slug": "x", "name": "X"})
+    ).status_code in (401, 403)
+    assert (await client.get("/api/v1/courses/1/outline")).status_code in (401, 403)

@@ -211,7 +211,7 @@ async def test_get_subtree_unknown_node_raises(
 async def _seed_via_client(client: AsyncClient) -> dict[str, int]:
     """Onboard a course + outline through the public API (V-D1)."""
     create = await client.post(
-        "/api/v1/courses", json={"slug": "t22", "name": "T22 Course"}
+        "/api/v1/courses", json={"slug": "t22", "name": "T22 Course"}, headers=_AUTH
     )
     assert create.status_code == 201, create.text
     course_id = create.json()["id"]
@@ -235,7 +235,7 @@ async def _seed_via_client(client: AsyncClient) -> dict[str, int]:
         ],
     }
     imp = await client.post(
-        f"/api/v1/courses/{course_id}/outline:import", json=payload
+        f"/api/v1/courses/{course_id}/outline:import", json=payload, headers=_AUTH
     )
     assert imp.status_code == 200, imp.text
     return {"course_id": course_id}

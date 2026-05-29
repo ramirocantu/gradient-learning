@@ -9,20 +9,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.v1.admin import router as admin_router
-# FENCED (T17, V-RB1, V-O5): analytics/analyzer/recommendations routers consume
-# FENCED services (app/services/{analytics,recommender,analyzer}). Restoration
-# is tied to the post-P0.5 node_id rollup port + T34 SPA reassessment.
-# from app.api.v1.analytics import router as analytics_router
-# from app.api.v1.analyzer import router as analyzer_router
 from app.api.v1.anki import router as anki_router
 from app.api.v1.anki_assign import router as anki_assign_router
 from app.api.v1.anki_load import router as anki_load_router
 from app.api.v1.anki_review import router as anki_review_router
 from app.api.v1.attempts import router as attempts_router
 from app.api.v1.captures import router as captures_router
+from app.api.v1.kb_reads import router as kb_reads_router
 from app.api.v1.outline import router as outline_router
+from app.api.v1.pdf import router as pdf_router
 from app.api.v1.pkm import router as pkm_router
-# from app.api.v1.recommendations import router as recommendations_router
 from app.api.v1.tutor import router as tutor_router
 from app.config import settings
 from app.kb_config import validate_kb_config
@@ -55,13 +51,11 @@ app.add_middleware(
 
 v1 = APIRouter(prefix="/api/v1")
 v1.include_router(captures_router)
+v1.include_router(pdf_router)
 v1.include_router(outline_router)
+v1.include_router(kb_reads_router)
 v1.include_router(admin_router)
-# FENCED (T17, V-RB1): analytics/analyzer/recommendations include disabled.
-# v1.include_router(analytics_router)
-# v1.include_router(analyzer_router)
 v1.include_router(attempts_router)
-# v1.include_router(recommendations_router)
 v1.include_router(tutor_router)
 v1.include_router(pkm_router)
 v1.include_router(anki_router)

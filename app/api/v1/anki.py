@@ -7,7 +7,8 @@ GET    /api/v1/anki/cards/by-qid/{qid}         → cards carrying `uworld::qid::
 GET    /api/v1/anki/performance?cc_code=…      → raw state + retention windows (§T39).
 GET    /api/v1/anki/performance?topic_id=…     → raw state + retention windows (§T39).
 
-All routes require `X-Coach-Token` via `verify_coach_token`. The sync
+All routes require `X-Coach-Token`, enforced globally at the v1 router
+(see app/main.py). The sync
 route stays soft on AnkiConnect being down (returns the §V4 error
 envelope, not a 500).
 """
@@ -17,7 +18,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_session, verify_coach_token
+from app.api.deps import get_session
 from app.config import settings
 from app.schemas.anki import AnkiCardOut, AnkiReviewQueueCardOut
 from app.services.anki.client import AnkiConnectClient
@@ -73,7 +74,7 @@ def _summary_payload(summary: SyncSummary) -> dict:
     }
 
 
-@router.post("/sync", dependencies=[Depends(verify_coach_token)])
+@router.post("/sync")
 async def sync_anki(
     session: AsyncSession = Depends(get_session),
     client: AnkiConnectClient = Depends(_anki_client),
@@ -104,9 +105,7 @@ async def sync_anki(
 
 
 @router.get(
-    "/review-queue",
-    dependencies=[Depends(verify_coach_token)],
-    response_model=list[AnkiReviewQueueCardOut],
+    "/review-queue",    response_model=list[AnkiReviewQueueCardOut],
 )
 async def get_review_queue(
     limit: int = Query(50, ge=1, le=200),
@@ -126,9 +125,7 @@ async def get_review_queue(
 
 
 @router.get(
-    "/cards/by-qid/{qid}",
-    dependencies=[Depends(verify_coach_token)],
-    response_model=list[AnkiCardOut],
+    "/cards/by-qid/{qid}",    response_model=list[AnkiCardOut],
 )
 async def get_cards_for_qid(
     qid: str,

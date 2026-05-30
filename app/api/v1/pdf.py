@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_session, verify_coach_token
+from app.api.deps import get_session
 from app.models.outline import Course
 from app.schemas.pdf import PdfIngestResponse
 from app.services.kb.pdf_ingest import ingest_pdf
@@ -33,9 +33,7 @@ router = APIRouter()
 async def post_pdf_ingest(
     course_id: int = Form(...),
     file: UploadFile = File(...),
-    session: AsyncSession = Depends(get_session),
-    _: None = Depends(verify_coach_token),
-) -> PdfIngestResponse:
+    session: AsyncSession = Depends(get_session),) -> PdfIngestResponse:
     course = (
         await session.execute(select(Course).where(Course.id == course_id))
     ).scalar_one_or_none()

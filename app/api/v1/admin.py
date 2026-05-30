@@ -3,7 +3,7 @@
 POST   /api/v1/admin/questions/{question_id}/tags
 DELETE /api/v1/admin/tags/{tag_id}
 
-No auth — localhost-only service per CLAUDE.md.
+Auth (X-Coach-Token) is enforced globally at the v1 router — see app/main.py.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_session, verify_coach_token
+from app.api.deps import get_session
 from app.config import settings
 from app.services.anki.client import AnkiConnectClient
 from app.services.llm.client import build_openai_client
@@ -172,7 +172,7 @@ async def trigger_job_logic(job_name: str) -> dict:
     return {"status": "triggered", "job": job_name}
 
 
-@router.get("/jobs", dependencies=[Depends(verify_coach_token)])
+@router.get("/jobs")
 async def list_jobs() -> list[dict]:
     return await list_jobs_payload()
 
@@ -180,7 +180,6 @@ async def list_jobs() -> list[dict]:
 @router.post(
     "/jobs/{job_name}/trigger",
     status_code=202,
-    dependencies=[Depends(verify_coach_token)],
 )
 async def trigger_job(job_name: str) -> dict:
     return await trigger_job_logic(job_name)
@@ -195,7 +194,7 @@ async def trigger_job(job_name: str) -> dict:
 # --------------------------------------------------------------------------- #
 
 
-@router.get("/status", dependencies=[Depends(verify_coach_token)])
+@router.get("/status")
 async def system_status(
     session: AsyncSession = Depends(get_session),
     anki_client: AnkiConnectClient = Depends(_anki_status_client),

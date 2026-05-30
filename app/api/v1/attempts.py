@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_session, verify_coach_token
+from app.api.deps import get_session
 from app.models.attempt_note import AttemptNote
 from app.schemas.attempt_notes import NoteOut
 from app.services.attempt_notes import (
@@ -34,9 +34,7 @@ class NoteIn(BaseModel):
 @router.get("/attempts/{attempt_id}/notes", response_model=list[NoteOut])
 async def get_notes(
     attempt_id: int,
-    session: AsyncSession = Depends(get_session),
-    _: None = Depends(verify_coach_token),
-) -> list[AttemptNote]:
+    session: AsyncSession = Depends(get_session),) -> list[AttemptNote]:
     return await list_notes(session, attempt_id=attempt_id)
 
 
@@ -44,9 +42,7 @@ async def get_notes(
 async def add_note(
     attempt_id: int,
     body: NoteIn,
-    session: AsyncSession = Depends(get_session),
-    _: None = Depends(verify_coach_token),
-) -> AttemptNote:
+    session: AsyncSession = Depends(get_session),) -> AttemptNote:
     try:
         return await create_note(
             session,
@@ -62,9 +58,7 @@ async def add_note(
 @router.delete("/attempts/notes/{note_id}", status_code=204)
 async def remove_note(
     note_id: int,
-    session: AsyncSession = Depends(get_session),
-    _: None = Depends(verify_coach_token),
-) -> None:
+    session: AsyncSession = Depends(get_session),) -> None:
     try:
         await delete_note(session, note_id=note_id)
     except NoteNotFoundError:

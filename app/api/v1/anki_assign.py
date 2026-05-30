@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_session, verify_coach_token
+from app.api.deps import get_session
 from app.models.anki import AnkiAssignment
 from app.schemas.anki_assign import (
     AnkiAssignmentCreateIn,
@@ -42,9 +42,7 @@ router = APIRouter(prefix="/anki", tags=["anki"])
 @router.post(
     "/assignments",
     response_model=AnkiAssignmentOut,
-    status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(verify_coach_token)],
-)
+    status_code=status.HTTP_201_CREATED,)
 async def create_assignment_route(
     payload: AnkiAssignmentCreateIn,
     session: AsyncSession = Depends(get_session),
@@ -65,9 +63,7 @@ async def create_assignment_route(
 
 @router.get(
     "/assignments",
-    response_model=list[AnkiAssignmentOut],
-    dependencies=[Depends(verify_coach_token)],
-)
+    response_model=list[AnkiAssignmentOut],)
 async def list_assignments_route(
     status_filter: str | None = Query(None, alias="status"),
     window_days: int | None = Query(None, ge=1, le=365),
@@ -91,9 +87,7 @@ async def list_assignments_route(
 
 @router.patch(
     "/assignments/{assignment_id}",
-    response_model=AnkiAssignmentOut,
-    dependencies=[Depends(verify_coach_token)],
-)
+    response_model=AnkiAssignmentOut,)
 async def patch_assignment_route(
     assignment_id: int,
     payload: AnkiAssignmentPatchIn,

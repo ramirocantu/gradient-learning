@@ -25,14 +25,14 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_session, verify_coach_token
+from app.api.deps import get_session
 from app.models.atomic_fact import AtomicFact
 from app.models.concept_edge import ConceptEdge
 from app.models.notion_page import NotionPage
 from app.models.outline import OutlineNode
 from app.models.pdf_source import PdfSource
 
-router = APIRouter(tags=["kb-reads"], dependencies=[Depends(verify_coach_token)])
+router = APIRouter(tags=["kb-reads"])
 
 
 async def _node_names(session: AsyncSession, node_ids: set[int]) -> dict[int, str]:

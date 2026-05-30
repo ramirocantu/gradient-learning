@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_session, verify_coach_token
+from app.api.deps import get_session
 from app.schemas.captures import CapturePayload, IngestResponse
 from app.services.adapters import UnknownCourseError, UnknownSourceError
 from app.services.ingest import ingest_capture
@@ -17,7 +17,6 @@ router = APIRouter()
 async def post_capture(
     payload: CapturePayload,
     session: AsyncSession = Depends(get_session),
-    _: None = Depends(verify_coach_token),
 ) -> IngestResponse:
     try:
         return await ingest_capture(payload, session)

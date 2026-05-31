@@ -11,4 +11,3 @@ mise.local.toml
 
 # Backend on-disk state (SQLite caches, media blobs)
 data/
-.codex/

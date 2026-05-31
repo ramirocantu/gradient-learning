@@ -203,3 +203,115 @@ async def client(_test_connection) -> AsyncIterator[AsyncClient]:
             yield c
     finally:
         app.dependency_overrides.pop(api_get_session, None)
+
+
+# --------------------------------------------------------------------------- #
+# RCA-10 §T1 — shared workflow-test fixtures.
+#
+# Reusable building blocks for the E2E workflow tests (Capture→Attempt,
+# PDF→Grounded Tag, Outline→Mastery). Each is a *factory* (V3): a test calls
+# it to seed its own course / payload, so no state leaks across tests and the
+# per-test savepoint rolls everything back.
+# --------------------------------------------------------------------------- #
+
+
+@pytest.fixture
+def coach_headers() -> dict[str, str]:
+    """The `X-Coach-Token` header that unlocks gated `/api/v1/*` routes.
+
+    Reads the test-config default (`change_me_before_use`) — conftest pops a
+    real `COACH_TOKEN` from env before the settings singleton builds, so this
+    matches what `verify_coach_token` checks against in the suite.
+    """
+    from app.config import settings
+
+    return {"X-Coach-Token": settings.COACH_TOKEN}
+
+
+@pytest.fixture
+def make_course(db_session: AsyncSession):
+    """Factory → insert + flush a `Course`, returning the persisted row.
+
+    Capture and PDF workflows need a course to attach to; outline import
+    creates its own via the route. Flushed into the per-test savepoint (V3).
+    """
+
+    async def _make(
+        slug: str = "biochem", name: str | None = None, description: str | None = None
+    ):
+        from app.models.outline import Course
+
+        course = Course(slug=slug, name=name or slug.title(), description=description)
+        db_session.add(course)
+        await db_session.flush()
+        return course
+
+    return _make
+
+
+@pytest.fixture
+def uworld_capture_payload():
+    """Factory → a JSON-serializable uworld `CapturePayload` body for
+    `POST /api/v1/captures`. Override any field via kwargs.
+
+    Builds through the strict `CapturePayload`/`ParsedCapture` schemas first,
+    so a drifted schema fails *here* (in the fixture) rather than deep inside
+    the route. Returns `model_dump(mode="json")` — the wire dict the client posts.
+    """
+
+    def _make(**over):
+        from datetime import datetime, timezone
+
+        from app.schemas.captures import CapturePayload, ChoiceItem, ParsedCapture
+
+        parsed = over.pop(
+            "parsed",
+            ParsedCapture(
+                stem_html="<p>stem</p>",
+                stem_plain="stem",
+                choices=[
+                    ChoiceItem(key="A", html="<p>a</p>", plain="a"),
+                    ChoiceItem(key="B", html="<p>b</p>", plain="b"),
+                ],
+                correct_choice="A",
+                selected_choice="A",
+                is_correct=True,
+            ),
+        )
+        payload = CapturePayload(
+            source=over.pop("source", "uworld"),
+            course_slug=over.pop("course_slug", None),
+            qid=over.pop("qid", "q-fixture-1"),
+            captured_at=over.pop("captured_at", datetime.now(timezone.utc)),
+            html=over.pop("html", "<p>raw</p>"),
+            parsed=parsed,
+            extension_version=over.pop("extension_version", "0.1.0"),
+            **over,
+        )
+        return payload.model_dump(mode="json")
+
+    return _make
+
+
+@pytest.fixture
+def fake_renderer():
+    """Factory → an injectable `Renderer` (`Path -> list[RenderedPage]`) that
+    yields `pages` stub PNG pages.
+
+    PDF-ingest (`ingest_pdf(renderer=...)`) is mock-friendly: this lets a test
+    skip PyMuPDF and a real PDF file entirely (V2 — vision is mocked, so the
+    page bytes are never decoded for real).
+    """
+
+    def _make(pages: int = 1):
+        from app.services.kb.pdf_ingest import RenderedPage
+
+        def _render(_path):
+            return [
+                RenderedPage(page=i, image_png=b"\x89PNG-stub")
+                for i in range(1, pages + 1)
+            ]
+
+        return _render
+
+    return _make

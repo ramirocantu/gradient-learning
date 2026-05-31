@@ -97,6 +97,51 @@ def make_client(*completions: SimpleNamespace) -> MagicMock:
     return client
 
 
+def unit_vector(dim: int = 1536, *, hot: int = 0, value: float = 1.0) -> list[float]:
+    """A one-hot vector of length `dim` (default = text-embedding-3-small, V-E1).
+
+    Distinct `hot` indices yield orthogonal directions, so cosine cleanly
+    separates inputs — recall tests (T5) map fact/node text to chosen `hot`
+    slots to force a deterministic ranking.
+    """
+    v = [0.0] * dim
+    v[hot % dim] = value
+    return v
+
+
+def make_embedding_response(
+    vector: list[float], *, prompt_tokens: int = 5
+) -> SimpleNamespace:
+    """Forge the `client.embeddings.create(...)` return shape the kb embedder
+    reads: `resp.data[0].embedding` + `resp.usage.prompt_tokens` (V-L1)."""
+    return SimpleNamespace(
+        data=[SimpleNamespace(embedding=list(vector))],
+        usage=SimpleNamespace(prompt_tokens=prompt_tokens),
+        model="text-embedding-3-small",
+    )
+
+
+def make_embeddings_client(vector_for: Any = None, *, dim: int = 1536) -> MagicMock:
+    """An `AsyncOpenAI`-shaped mock for the embeddings endpoint (V2/V16).
+
+    `vector_for` is a callable `(input_text) -> vector`; default returns a
+    constant unit vector of `dim`. Per-input mapping lets a test return one
+    direction for outline-node text and another for the fact under tag so
+    recall ranks deterministically — without a real OpenAI call.
+    """
+    if vector_for is None:
+        vector_for = lambda _text: unit_vector(dim)  # noqa: E731 — terse mock default
+
+    client = MagicMock()
+    client.embeddings = MagicMock()
+
+    async def _create(*, model: str, input: Any, **_kw: Any) -> SimpleNamespace:  # noqa: A002
+        return make_embedding_response(vector_for(input))
+
+    client.embeddings.create = AsyncMock(side_effect=_create)
+    return client
+
+
 def client_with_error(exc: BaseException) -> MagicMock:
     """Client whose `chat.completions.create` raises `exc` on every call."""
     client = MagicMock()

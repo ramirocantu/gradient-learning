@@ -5,7 +5,6 @@ from __future__ import annotations
 import math
 from types import SimpleNamespace
 
-import pytest
 
 from app.services.llm import calibrator
 from tests._openai_mocks import make_client

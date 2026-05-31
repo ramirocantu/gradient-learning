@@ -23,7 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models.outline import Course, OutlineNode
+from app.models.outline import OutlineNode
 
 _AUTH = {"X-Coach-Token": settings.COACH_TOKEN}
 

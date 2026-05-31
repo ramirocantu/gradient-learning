@@ -69,6 +69,7 @@ async def test_admin_manual_tag_forwards_node_id(
 
     r = await client.post(
         f"/api/v1/admin/questions/{qid}/tags",
+        headers=_AUTH,
         json={"node_id": ids["Amino acids"]},
     )
     assert r.status_code == 201, r.text
@@ -89,6 +90,7 @@ async def test_admin_manual_tag_unknown_question_404(
     await db_session.commit()
     r = await client.post(
         "/api/v1/admin/questions/999999/tags",
+        headers=_AUTH,
         json={"node_id": ids["Proteins"]},
     )
     assert r.status_code == 404, r.text

@@ -8,6 +8,12 @@ uv = "latest"
 # separate .python-version file is needed. requires-python in pyproject stays
 # the floor; this picks the exact line.
 UV_PYTHON = "3.12"
+
+# Put uv's venv bin on PATH so project tools (pyright-langserver, ruff, etc.)
+# are runnable as bare binaries — required by Claude Code's official pyright-lsp
+# plugin, which launches `pyright-langserver` from PATH (can't use `uv run`).
+_.path = [".venv/bin"]
+
 COMPOSE_PROJECT_NAME = "gradient-server"
 POSTGRES_USER = "gradient"
 POSTGRES_PASSWORD = "gradient_secret"
@@ -66,8 +72,8 @@ description = "Format with Ruff"
 run = "uv run ruff format ."
 
 [tasks.typecheck]
-description = "Static type check (basedpyright)"
-run = "uv run basedpyright"
+description = "Static type check (pyright)"
+run = "uv run pyright"
 
 [tasks.check]
 description = "Run lint, type check, and tests"
@@ -78,12 +84,10 @@ run = [
 ]
 
 # ── Language servers ──────────────────────────────────────────────────────────
-# Canonical LSP launch commands — point your editor / coding agent at these
-# (stdio servers). Versions come from uv.lock, so every agent uses the same.
-
-[tasks."lsp:type"]
-description = "basedpyright language server (stdio)"
-run = "uv run basedpyright-langserver --stdio"
+# Python type LSP (pyright-langserver) is launched by Claude Code's official
+# pyright-lsp plugin, which finds it on PATH via [env] _.path = [".venv/bin"].
+# ruff has no official CC plugin, so expose it as a manual launch command for
+# editors / other agents. Version comes from uv.lock — same everywhere.
 
 [tasks."lsp:ruff"]
 description = "Ruff language server (stdio)"

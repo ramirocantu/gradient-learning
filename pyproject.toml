@@ -41,15 +41,15 @@ include = ["app*"]
 [tool.ruff]
 line-length = 100
 
-[tool.basedpyright]
-# LSP + CLI type checker. Points at uv's .venv so imports resolve.
-# "standard" instead of basedpyright's strict default to avoid drowning an
-# existing codebase in errors; tighten to "strict" per-area later.
+[tool.pyright]
+# LSP + CLI type checker (matches Claude Code's official pyright-lsp plugin).
+# Points at uv's .venv so imports resolve. "basic" keeps an existing codebase
+# manageable; tighten to "standard"/"strict" per-area later.
 venvPath = "."
 venv = ".venv"
 pythonVersion = "3.12"
 include = ["app"]
-typeCheckingMode = "standard"
+typeCheckingMode = "basic"
 
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib"
@@ -61,7 +61,7 @@ pythonpath = ["."]
 
 [dependency-groups]
 dev = [
-    "basedpyright>=1.39.6",
+    "pyright>=1.1.409",
     "pytest>=9.0.3",
     "pytest-asyncio>=1.3.0",
     "ruff>=0.15.13",

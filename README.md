@@ -17,39 +17,39 @@ local setup.
 
 ## Requirements
 
-- Python 3.12+
+- [mise](https://mise.jdx.dev) — manages the toolchain (uv/Python), env, and tasks
 - Docker (for Postgres)
 - An OpenAI API key (or any OpenAI-compatible local server — set
   `OPENAI_BASE_URL`)
 
 ## Setup
 
-**1. Start Postgres:**
+mise drives everything (toolchain, env, tasks). [Install mise](https://mise.jdx.dev/getting-started.html);
+it auto-activates from the repo root.
+
+**1. Secrets** — kept outside the repo, shared across worktrees:
 ```bash
-docker compose up -d
+cp mise.local.example.toml mise.local.toml
+mkdir -p ~/.config/gradient
+cat > ~/.config/gradient/secrets.json <<'JSON'
+{
+  "OPENAI_API_KEY": "sk-...",
+  "COACH_TOKEN": "choose-a-shared-secret",
+  "NOTION_API_TOKEN": "",
+  "NOTION_WIKI_DB_ID": ""
+}
+JSON
+chmod 600 ~/.config/gradient/secrets.json
+```
+mise loads these via `mise.local.toml`. Non-secret config lives in `mise.toml [env]`;
+everything else falls back to `app/config.py` defaults.
+
+**2. Install dependencies, start Postgres, and migrate:**
+```bash
+mise run setup
 ```
 
-**2. Create your env file:**
-```bash
-cp .env.example .env
-```
-Edit `.env` and set `OPENAI_API_KEY`. All other defaults match the Docker
-config and work as-is locally. Model selection (`OPENAI_MODEL`,
-`OPENAI_CALIBRATOR_MODEL`) is documented inline in `.env.example`.
-
-**3. Create the virtualenv and install dependencies:**
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-```
-
-**4. Run migrations:**
-```bash
-alembic upgrade head
-```
-
-**5. (Optional) Seed the AAMC outline:**
+**3. (Optional) Seed the AAMC outline:**
 ```bash
 # Creates a course slug=aamc + materializes the 1554-node MCAT outline.
 curl -X POST localhost:8000/api/v1/courses \
@@ -64,12 +64,18 @@ The same endpoint accepts any schema upload — uploading any other
 `{course, nodes}` file materializes that course. AAMC has no privileged
 position; it's just the bundled example (§V-O3).
 
-**6. Start the server:**
+**4. Start the server:**
 ```bash
-uvicorn app.main:app --reload
+mise run dev
 ```
 
 API at `http://localhost:8000`. Interactive docs at `http://localhost:8000/docs`.
+
+**(Optional) Enable worktree auto-provisioning** — clones a per-branch database on
+`git worktree add`:
+```bash
+mise run hooks:install   # once per clone
+```
 
 ## Verifying it works
 
@@ -81,7 +87,7 @@ curl localhost:8000/healthz
 ## Running tests
 
 ```bash
-pytest
+mise run test
 ```
 
 ## Project layout
@@ -112,15 +118,18 @@ pytest
 
 | Variable | Required | Description |
 |---|---|---|
-| `DATABASE_URL` | Yes | Async Postgres URL (`postgresql+asyncpg://...`) |
+| `DATABASE_URL` | Auto | Async Postgres URL — derived per-branch by mise (`gradient_<branch>`); don't set manually |
 | `OPENAI_API_KEY` | Yes | API key — used by every LLM-touching service (categorizer, anki topic resolver, feature extractor, synthesizer, calibrator) |
 | `OPENAI_BASE_URL` | No | Optional OpenAI-compatible base URL — set this to swap to a local server (vLLM / lm-studio) without changing code |
 | `OPENAI_MODEL` | No | Default chat model (T5 spike: `gpt-4.1-mini`) |
 | `OPENAI_CALIBRATOR_MODEL` | No | Logprobs-capable chat model for confidence calibration (T5: `gpt-4.1-mini`). MUST NOT be an o-series reasoning model |
 | `COACH_TOKEN` | Yes | Shared secret the Chrome extension sends in `X-Coach-Token` |
 
-See `.env.example` for the full per-extractor knob set (cache paths, scheduler
-intervals, Anki integration).
+Secrets (`OPENAI_API_KEY`, `COACH_TOKEN`, `NOTION_*`) live in
+`~/.config/gradient/secrets.json` (see `mise.local.example.toml`). Non-secret
+knobs are set in `mise.toml [env]` or fall back to `app/config.py` defaults —
+that's the source of truth for the full per-extractor knob set (cache paths,
+scheduler intervals, Anki integration).
 
 ## Adding a migration
 

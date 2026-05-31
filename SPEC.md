@@ -54,6 +54,10 @@ bug to §B → **E2E test** locks the green path. Manual-pass findings drive the
 # Capture → Attempt
 POST /api/v1/captures                      CapturePayload{source=uworld,...} → IngestResponse
                                            (UnknownSource/UnknownCourse → 422)
+                                           dedup key = questions.qid UNIQUE: repeat qid → same
+                                           question_id + NEW attempt_id (⊥ (source,external_id))
+                                           course_slug→course_id; ABSENT slug→fallback (NULL course_id),
+                                           UNKNOWN slug→422 (UnknownCourseError) — not the same path
 GET  /api/v1/attempts/{attempt_id}/notes   observe attempt persisted
 
 # PDF → Grounded Tag (full LLM4Tag arc)
@@ -90,13 +94,19 @@ All routes above are `X-Coach-Token`-gated (`verify_coach_token`).
 - V4: Every manual-pass breakage → a §B row; if recurrence is assertion-catchable, the fixing E2E test
   carries a regression assertion (and a new §V when it generalizes). ⊥ silent fix.
 - V5: Out-of-scope surfaces (Anki cycle, Notion write-out) get ⊥ new tests and ⊥ edits to existing tests.
-- V6: A capture with no `course_id`/unknown slug exercises the documented fallback (single-course
-  `tag_pending` rule) — the E2E asserts the actual fallback, ⊥ assumes a 422.
+- V6 (corrected from T2 manual pass): ABSENT `course_slug` → fallback (`course_id` NULL, single-course
+  `tag_pending` rule); UNKNOWN `course_slug` → 422 (`UnknownCourseError`). Distinct paths — the E2E
+  asserts both: absent persists with NULL course, unknown rejects with 422.
 - V7: The PDF→Tag E2E asserts the **persisted tag**, not just recall: an `atomic_fact_tags` row with
   `source='llm'`, non-NULL `confidence`, a resolved `node_id`, and `manual_review` consistent with
   the `<0.5` threshold (V-T3). Empty recall ⇒ no LLM call ⇒ no tag row (assert the empty path too).
 - V8: `embed_pending` runs before `tag_pending` in the arc; the test ⊥ assert a tag before embeddings +
   node vectors exist (recall would return empty and the assertion would be vacuous).
+- V9 (snapshot semantics — confirmed intended, B1): a capture is a **full snapshot** of the source
+  question. ∀ re-capture(same `qid`): `questions.uworld_aamc_tags` ← incoming tags verbatim — absent/empty
+  incoming ⇒ NULL (⊥ merge-with-stored), and a tag change re-flags `needs_categorization=true`. Per-capture
+  provenance lives in `raw_captures.raw_json`, ⊥ in the denormalized question column. T3 E2E asserts the
+  clobber-on-reupload path as **expected**, ⊥ a regression to guard.
 
 ## §T — tasks
 
@@ -106,7 +116,7 @@ Per workflow: manual pass (find/backprop) precedes its E2E test. `st`: `.` todo 
 | id | st | goal | cites |
 |-----|----|------|-------|
 | T1 | x | fixtures: craft uworld `CapturePayload` sample + reusable `conftest` helpers (auth header, course seed, 4-site OpenAI mock wiring, fake `renderer` returning stub page-images). ⊥ committed PDF — E2E uses fake renderer + synthetic bytes; manual T4 supplies its own local PDF | V2,V3,I |
-| T2 | . | manual pass — Capture→Attempt: `mise run dev`; POST a uworld capture (with + without course_slug); verify Question+Attempt+tags rows; log breakage to §B | V4,V6,I |
+| T2 | x | manual pass — Capture→Attempt: `mise run dev`; POST a uworld capture (with + without course_slug); verify Question+Attempt+tags rows; log breakage to §B | V4,V6,I |
 | T3 | . | E2E pytest — Capture→Attempt: POST capture → assert IngestResponse + persisted Question/Attempt/tags via read surface; cover course-bound + fallback paths | V1,V3,V6,I |
 | T4 | . | manual pass — PDF→Grounded Tag (full arc): POST `/pdf/ingest` (real course+PDF, real OpenAI) → run `embed_pending` → run `tag_pending` (or scheduler `_do_run_grounded_tag`); verify pdf_sources status, atomic_facts, content_embeddings, recall candidates, persisted atomic_fact_tags(node_id, source='llm', confidence); log breakage to §B | V4,V7,V8,I |
 | T5 | . | E2E pytest — PDF→Grounded Tag (full arc): mock all four OpenAI sites (vision/extract/embed/tagging+calibrator); seed+import outline; POST ingest → assert PdfIngestResponse + `/pdf-sources` + `/atomic-facts`; in-process `embed_pending`→`tag_pending`; assert persisted tag (V7) + empty-recall no-tag path | V1,V2,V3,V7,V8,I |
@@ -118,3 +128,4 @@ Per workflow: manual pass (find/backprop) precedes its E2E test. `st`: `.` todo 
 
 | id | date | cause | fix |
 |-----|------|-------|-----|
+| B1 | 2026-05-31 | Manual pass T2: re-capture (same `qid`) omitting/empty `uworld_aamc_tags` NULLs `questions.uworld_aamc_tags` + re-flags `needs_categorization` (`extension_capture.py:212,232,235`: incoming None != stored → `tags_changed` → clobber). Surfaced when a repeat POST without tags wiped a stored `["Biochemistry"]`. | **No code fix — confirmed intended** (capture = full snapshot; cleared tag = source no longer presents it). Per-capture provenance preserved in `raw_captures.raw_json` (verified cap5=`["Biochemistry"]`, cap7=`[]`). Documented as V9; T3 E2E asserts the clobber as expected. |

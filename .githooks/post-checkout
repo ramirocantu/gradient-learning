@@ -1,0 +1,40 @@
+#!/bin/sh
+# Tool-agnostic worktree provisioning.
+#
+# Git runs post-checkout after `git worktree add` (and after `git clone` / the
+# initial checkout). It also runs on ordinary `git checkout <branch>` switches,
+# so we act ONLY on a brand-new checkout — detected by the previous HEAD being
+# the null object id (all zeros). CWD is already the new worktree, so
+# `mise run worktree:setup` resolves and clones THIS branch's database.
+#
+# Committed + enabled via `core.hooksPath` (run `mise run hooks:install` once
+# per clone). Works regardless of which tool created the worktree.
+#
+# Args (git): $1 = previous HEAD, $2 = new HEAD, $3 = 1 if branch checkout.
+
+old_head="$1"
+branch_checkout="$3"
+
+# Only on a branch checkout (not a file checkout).
+[ "$branch_checkout" = "1" ] || exit 0
+
+# Skip ordinary branch switches: a real previous HEAD contains a non-zero char.
+# Matching "any non-zero" handles both SHA-1 (40 zeros) and SHA-256 (64 zeros).
+case "$old_head" in
+  *[!0]*) exit 0 ;;
+esac
+
+if ! command -v mise >/dev/null 2>&1; then
+  echo "[post-checkout] mise not found on PATH; skipping DB provisioning."
+  exit 0
+fi
+
+echo "[post-checkout] New worktree detected — provisioning branch database via mise..."
+mise trust --quiet 2>/dev/null
+if ! mise run worktree:setup; then
+  echo "[post-checkout] 'mise run worktree:setup' failed (is Docker/Postgres running?)."
+  echo "[post-checkout] Re-run it manually once the stack is up."
+fi
+
+# Never block the git operation.
+exit 0

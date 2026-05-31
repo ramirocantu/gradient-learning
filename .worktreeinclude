@@ -1,10 +1,13 @@
-# Local-only files copied into each new worktree by .claude/hooks/worktree-create.sh.
+# Gitignored, machine-local files to copy into each new worktree.
 # Uses gitignore syntax — patterns must match files that are currently gitignored,
 # or git ls-files --others --ignored won't return them.
+# (DB provisioning is handled separately by the committed git post-checkout hook;
+#  see .githooks/post-checkout, enabled via `mise run hooks:install`.)
 
-# Env / secrets
-.env
-.env.local
+# mise secrets pointer — holds only a path to ~/.config/gradient/secrets.json,
+# no secret values, so copying it into worktrees is safe. The secrets file lives
+# outside the repo and is shared by every worktree (never copied, never committable).
+mise.local.toml
 
 # Backend on-disk state (SQLite caches, media blobs)
 data/

@@ -211,7 +211,7 @@ description = "Drop this branch's database (refuses the gradient template and pr
 run = 'mise run db:drop "$POSTGRES_DB"'
 
 [tasks."db:prune"]
-description = "Drop branch databases with no live worktree (DRY RUN; set APPLY=1 to delete)"
+description = "Drop branch databases with no live worktree (DRY RUN; set APPLY=0 to dry run)"
 # git has no worktree-removal hook, so reconcile instead: any gradient_* DB whose
 # branch no longer has a checked-out worktree is an orphan. The keep-set is built
 # from each live worktree's mise-derived POSTGRES_DB, so this reuses mise.toml's
@@ -229,7 +229,7 @@ orphans=0
 for db in $all; do
   case " $keep " in *" $db "*) continue ;; esac
   orphans=$((orphans + 1))
-  if [ "${APPLY:-0}" = "1" ]; then
+  if [ "${APPLY:-1}" = "1" ]; then
     mise run db:drop "$db"
   else
     echo "[dry-run] would drop orphan database: $db"
@@ -237,6 +237,6 @@ for db in $all; do
 done
 
 [ "$orphans" = "0" ] && echo "No orphan branch databases." && exit 0
-[ "${APPLY:-0}" != "1" ] && echo "Re-run with APPLY=1 to delete."
+[ "${APPLY:-1}" != "1" ] && echo "Re-run with APPLY=1 to delete."
 exit 0
 """

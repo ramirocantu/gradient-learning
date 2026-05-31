@@ -36,8 +36,7 @@ def test_no_html_rendering_routes() -> None:
     bad = [
         route.path
         for route in main_mod.app.routes
-        if isinstance(route, APIRoute)
-        and issubclass(_resolve_response_class(route), HTMLResponse)
+        if isinstance(route, APIRoute) and issubclass(_resolve_response_class(route), HTMLResponse)
     ]
     assert not bad, f"backend-only app must not render HTML; HTMLResponse routes: {bad}"
 
@@ -57,6 +56,4 @@ def test_web_package_is_media_only() -> None:
         f"app/web should hold only __init__.py + media.py; found {sorted(py_files)}"
     )
     for gone in ("dashboard", "viewer"):
-        assert not (web_dir / gone).exists(), (
-            f"app/web/{gone} should be deleted (backend-only)"
-        )
+        assert not (web_dir / gone).exists(), f"app/web/{gone} should be deleted (backend-only)"

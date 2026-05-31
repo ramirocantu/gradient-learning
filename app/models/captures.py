@@ -208,9 +208,7 @@ class QuestionTag(Base):
             "source IN ('schema_map', 'llm', 'manual')",
             name="ck_question_tags_source",
         ),
-        UniqueConstraint(
-            "question_id", "node_id", "source", name="uq_question_tags_node_source"
-        ),
+        UniqueConstraint("question_id", "node_id", "source", name="uq_question_tags_node_source"),
         Index("ix_question_tags_question_id", "question_id"),
         Index("ix_question_tags_node_id", "node_id"),
     )

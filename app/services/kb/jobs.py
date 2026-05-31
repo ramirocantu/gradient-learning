@@ -122,7 +122,9 @@ async def _embed_outline_nodes(
                     ContentEmbedding.embedding_version == version,
                 )
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     )
 
     for node in nodes:
@@ -166,9 +168,7 @@ async def embed_pending(
     report = EmbedReport()
 
     # Outline nodes embed their >>-path (B); see _embed_outline_nodes.
-    await _embed_outline_nodes(
-        session, openai_client=openai_client, version=version, report=report
-    )
+    await _embed_outline_nodes(session, openai_client=openai_client, version=version, report=report)
 
     # (entity_kind, id column, text column) — surface text embedded directly.
     specs = [
@@ -181,9 +181,7 @@ async def embed_pending(
             ContentEmbedding.embedding_version == version,
         )
         rows = (
-            await session.execute(
-                select(id_col, text_col).where(id_col.notin_(embedded_ids))
-            )
+            await session.execute(select(id_col, text_col).where(id_col.notin_(embedded_ids)))
         ).all()
         for entity_id, text in rows:
             if not (text or "").strip():
@@ -290,13 +288,17 @@ async def tag_pending(
     # --- atomic facts: untagged (no primary node, no prior llm tag) ---------
     tagged_facts = select(AtomicFactTag.atomic_fact_id).where(AtomicFactTag.source == "llm")
     facts = (
-        await session.execute(
-            select(AtomicFact).where(
-                AtomicFact.node_id.is_(None),
-                AtomicFact.id.notin_(tagged_facts),
+        (
+            await session.execute(
+                select(AtomicFact).where(
+                    AtomicFact.node_id.is_(None),
+                    AtomicFact.id.notin_(tagged_facts),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     for fact in facts:
         try:
             ran = await _tag_one(
@@ -323,10 +325,10 @@ async def tag_pending(
     # with no course_id (legacy/unscoped) falls back to the sole course iff
     # exactly one exists, else is skipped (course ambiguous) -----------------
     questions = (
-        await session.execute(
-            select(Question).where(Question.needs_categorization.is_(True))
-        )
-    ).scalars().all()
+        (await session.execute(select(Question).where(Question.needs_categorization.is_(True))))
+        .scalars()
+        .all()
+    )
     if questions:
         course_count = (
             await session.execute(select(func.count()).select_from(Course))

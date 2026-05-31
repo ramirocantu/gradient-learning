@@ -62,10 +62,7 @@ class RetentionSummary:
 def _empty(scope: str, windows: tuple[int, ...]) -> RetentionSummary:
     return RetentionSummary(
         scope=scope,
-        windows={
-            n: RetentionWindow(window_days=n, pass_count=0, fail_count=0)
-            for n in windows
-        },
+        windows={n: RetentionWindow(window_days=n, pass_count=0, fail_count=0) for n in windows},
     )
 
 

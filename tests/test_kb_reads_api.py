@@ -29,8 +29,12 @@ async def _seed(db: AsyncSession) -> dict[str, int]:
     await db.flush()
     ids: dict[str, int] = {"course": course.id}
 
-    a = OutlineNode(course_id=course.id, parent_id=None, kind="topic", name="Amino acids", depth=0, position=0)
-    b = OutlineNode(course_id=course.id, parent_id=None, kind="topic", name="Enzymes", depth=0, position=1)
+    a = OutlineNode(
+        course_id=course.id, parent_id=None, kind="topic", name="Amino acids", depth=0, position=0
+    )
+    b = OutlineNode(
+        course_id=course.id, parent_id=None, kind="topic", name="Enzymes", depth=0, position=1
+    )
     db.add_all([a, b])
     await db.flush()
     ids["A"], ids["B"] = a.id, b.id
@@ -38,16 +42,38 @@ async def _seed(db: AsyncSession) -> dict[str, int]:
     db.add(ConceptEdge(src_node_id=a.id, dst_node_id=b.id, kind="similarity", score=0.87))
     await db.flush()
 
-    pdf = PdfSource(course_id=course.id, filename="lecture1.pdf", sha256="abc123", status="ingested")
+    pdf = PdfSource(
+        course_id=course.id, filename="lecture1.pdf", sha256="abc123", status="ingested"
+    )
     db.add(pdf)
     await db.flush()
     ids["pdf"] = pdf.id
 
-    db.add_all([
-        AtomicFact(course_id=course.id, pdf_source_id=pdf.id, page=1, text="fact one", node_id=a.id, content_hash="h1"),
-        AtomicFact(course_id=course.id, pdf_source_id=pdf.id, page=2, text="fact two", node_id=None, content_hash="h2"),
-    ])
-    db.add(NotionPage(node_id=a.id, notion_page_id="np-1", url="https://notion.so/np-1", tags=["amino"]))
+    db.add_all(
+        [
+            AtomicFact(
+                course_id=course.id,
+                pdf_source_id=pdf.id,
+                page=1,
+                text="fact one",
+                node_id=a.id,
+                content_hash="h1",
+            ),
+            AtomicFact(
+                course_id=course.id,
+                pdf_source_id=pdf.id,
+                page=2,
+                text="fact two",
+                node_id=None,
+                content_hash="h2",
+            ),
+        ]
+    )
+    db.add(
+        NotionPage(
+            node_id=a.id, notion_page_id="np-1", url="https://notion.so/np-1", tags=["amino"]
+        )
+    )
     await db.commit()
     return ids
 
@@ -70,7 +96,9 @@ async def test_concept_edges_feed(client: AsyncClient, db_session: AsyncSession)
 
 
 @pytest.mark.asyncio
-async def test_concept_edges_filter_by_node_and_kind(client: AsyncClient, db_session: AsyncSession) -> None:
+async def test_concept_edges_filter_by_node_and_kind(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
     ids = await _seed(db_session)
     # node filter matches either endpoint
     r = await client.get(f"/api/v1/concept-edges?node_id={ids['B']}", headers=_AUTH)
@@ -122,7 +150,9 @@ async def test_notion_pages_pointer_index(client: AsyncClient, db_session: Async
 
 
 @pytest.mark.asyncio
-async def test_pdf_sources_inbox_with_facts_count(client: AsyncClient, db_session: AsyncSession) -> None:
+async def test_pdf_sources_inbox_with_facts_count(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
     ids = await _seed(db_session)
     r = await client.get("/api/v1/pdf-sources", headers=_AUTH)
     assert r.status_code == 200, r.text
@@ -143,7 +173,12 @@ async def test_pdf_sources_inbox_with_facts_count(client: AsyncClient, db_sessio
 
 @pytest.mark.asyncio
 async def test_all_routes_empty_when_unpopulated(client: AsyncClient) -> None:
-    for path in ("/api/v1/concept-edges", "/api/v1/atomic-facts", "/api/v1/notion/pages", "/api/v1/pdf-sources"):
+    for path in (
+        "/api/v1/concept-edges",
+        "/api/v1/atomic-facts",
+        "/api/v1/notion/pages",
+        "/api/v1/pdf-sources",
+    ):
         r = await client.get(path, headers=_AUTH)
         assert r.status_code == 200, r.text
         assert r.json() == []
@@ -154,6 +189,11 @@ async def test_all_routes_empty_when_unpopulated(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_routes_require_coach_token(client: AsyncClient) -> None:
-    for path in ("/api/v1/concept-edges", "/api/v1/atomic-facts", "/api/v1/notion/pages", "/api/v1/pdf-sources"):
+    for path in (
+        "/api/v1/concept-edges",
+        "/api/v1/atomic-facts",
+        "/api/v1/notion/pages",
+        "/api/v1/pdf-sources",
+    ):
         r = await client.get(path)
         assert r.status_code in (401, 403), f"{path}: {r.status_code}"

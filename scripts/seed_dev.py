@@ -52,57 +52,75 @@ QID_PREFIX = "dev-"
 # still tags something. `dist` = wrong-pick bias used to shape attempts.
 QUESTIONS = [
     {
-        "qid": "dev-12420", "node_hint": "beta-oxidation",
+        "qid": "dev-12420",
+        "node_hint": "beta-oxidation",
         "stem": "Net ATP equivalents per palmitate (C16) via β-oxidation, malate-aspartate shuttle?",
-        "choices": ["96", "106", "120", "129"], "correct": "C", "common_wrong": "B",
+        "choices": ["96", "106", "120", "129"],
+        "correct": "C",
+        "common_wrong": "B",
         "explanation": "7 cycles β-ox → 7 FADH₂ + 7 NADH + 8 acetyl-CoA; malate-aspartate keeps cytosolic NADH at 2.5 ATP; minus 2 ATP activation → 120.",
     },
     {
-        "qid": "dev-12418", "node_hint": "lipid",
+        "qid": "dev-12418",
+        "node_hint": "lipid",
         "stem": "Saponification of a triacylglycerol proceeds via which mechanism?",
         "choices": ["Acid-catalyzed", "Base-catalyzed", "Radical", "Enzymatic only"],
-        "correct": "B", "common_wrong": "A",
+        "correct": "B",
+        "common_wrong": "A",
         "explanation": "Saponification is base-catalyzed ester hydrolysis → glycerol + fatty-acid salts (soap).",
     },
     {
-        "qid": "dev-12416", "node_hint": "bioenerget",
+        "qid": "dev-12416",
+        "node_hint": "bioenerget",
         "stem": "Which citric-acid-cycle step is irreversible and rate-limiting?",
         "choices": ["Citrate synthase", "Aconitase", "Isocitrate dehydrogenase", "Fumarase"],
-        "correct": "C", "common_wrong": "A",
+        "correct": "C",
+        "common_wrong": "A",
         "explanation": "Isocitrate dehydrogenase is a committed, allosterically-regulated irreversible step.",
     },
     {
-        "qid": "dev-12414", "node_hint": "carbohydrate",
+        "qid": "dev-12414",
+        "node_hint": "carbohydrate",
         "stem": "Glycogen phosphorylase is activated by which signal in muscle?",
         "choices": ["Insulin", "Epinephrine", "Glucagon", "Cortisol"],
-        "correct": "B", "common_wrong": "C",
+        "correct": "B",
+        "common_wrong": "C",
         "explanation": "Muscle lacks glucagon receptors; epinephrine → cAMP → PKA → phosphorylase activation.",
     },
     {
-        "qid": "dev-12412", "node_hint": "enzyme",
+        "qid": "dev-12412",
+        "node_hint": "enzyme",
         "stem": "A competitive inhibitor affects Km and Vmax how?",
         "choices": ["↑Km, Vmax same", "Km same, ↓Vmax", "↑Km, ↑Vmax", "↓Km, Vmax same"],
-        "correct": "A", "common_wrong": "B",
+        "correct": "A",
+        "common_wrong": "B",
         "explanation": "Competitive inhibition raises apparent Km; Vmax unchanged (outcompeted at high [S]).",
     },
     {
-        "qid": "dev-12410", "node_hint": "amino acid",
+        "qid": "dev-12410",
+        "node_hint": "amino acid",
         "stem": "Which amino acid is both glucogenic and ketogenic?",
         "choices": ["Leucine", "Lysine", "Phenylalanine", "Alanine"],
-        "correct": "C", "common_wrong": "A",
+        "correct": "C",
+        "common_wrong": "A",
         "explanation": "Phe (and Tyr, Ile, Trp) are both; Leu/Lys are purely ketogenic.",
     },
     {
-        "qid": "dev-12408", "node_hint": "beta-oxidation",
+        "qid": "dev-12408",
+        "node_hint": "beta-oxidation",
         "stem": "Activation of a fatty acid to acyl-CoA costs how many ATP equivalents?",
-        "choices": ["1", "2", "3", "0"], "correct": "B", "common_wrong": "A",
+        "choices": ["1", "2", "3", "0"],
+        "correct": "B",
+        "common_wrong": "A",
         "explanation": "ATP → AMP + PPᵢ ≈ 2 high-energy phosphate bonds.",
     },
     {
-        "qid": "dev-12406", "node_hint": "lipid",
+        "qid": "dev-12406",
+        "node_hint": "lipid",
         "stem": "The carnitine shuttle transports what across the inner mitochondrial membrane?",
         "choices": ["Acetyl-CoA", "Long-chain acyl groups", "NADH", "Pyruvate"],
-        "correct": "B", "common_wrong": "A",
+        "correct": "B",
+        "common_wrong": "A",
         "explanation": "CPT-I/CPT-II shuttle long-chain acyl groups as acylcarnitine into the matrix.",
     },
 ]
@@ -128,19 +146,69 @@ SESSIONS = [("Bio-Sys 14", 0), ("Mixed 042", 1), ("Bio-Sys 13", 2)]
 #   • pdf pages / node_id → not modeled on pdf_sources (course-scoped by design);
 #     no seed source — client degrades these to "—".
 KB_PDFS = [
-    {"sha": "dev-sha-lehninger-ch17", "filename": "Lehninger-ch17-fatty-acid-catabolism.pdf", "status": "ingested", "ingested": True},
-    {"sha": "dev-sha-stryer-ch16", "filename": "Stryer-ch16-glycolysis.pdf", "status": "ingested", "ingested": True},
-    {"sha": "dev-sha-scan-2026", "filename": "scanned-lecture-notes-2026.pdf", "status": "parsing", "ingested": False},
+    {
+        "sha": "dev-sha-lehninger-ch17",
+        "filename": "Lehninger-ch17-fatty-acid-catabolism.pdf",
+        "status": "ingested",
+        "ingested": True,
+    },
+    {
+        "sha": "dev-sha-stryer-ch16",
+        "filename": "Stryer-ch16-glycolysis.pdf",
+        "status": "ingested",
+        "ingested": True,
+    },
+    {
+        "sha": "dev-sha-scan-2026",
+        "filename": "scanned-lecture-notes-2026.pdf",
+        "status": "parsing",
+        "ingested": False,
+    },
 ]
 
 KB_FACTS = [
-    {"text": "β-oxidation of one palmitate (C16) yields 8 acetyl-CoA, 7 NADH, and 7 FADH₂.", "page": 612, "pdf_idx": 0, "node_idx": 0},
-    {"text": "The carnitine shuttle (CPT-I/CPT-II) is rate-limiting for long-chain acyl entry into the matrix.", "page": 615, "pdf_idx": 0, "node_idx": 0},
-    {"text": "CPT-I is inhibited by malonyl-CoA, reciprocally coupling fatty-acid synthesis and oxidation.", "page": 617, "pdf_idx": 0, "node_idx": 1},
-    {"text": "Saponification is base-catalyzed hydrolysis of the ester bonds in a triacylglycerol.", "page": 88, "pdf_idx": 0, "node_idx": 1},
-    {"text": "Hexokinase is feedback-inhibited by its product glucose-6-phosphate.", "page": 433, "pdf_idx": 1, "node_idx": 2},
-    {"text": "PFK-1 is the committed step of glycolysis, activated by AMP and fructose-2,6-bisphosphate.", "page": 437, "pdf_idx": 1, "node_idx": 2},
-    {"text": "Pyruvate kinase catalyzes a substrate-level phosphorylation that yields ATP.", "page": 441, "pdf_idx": 1, "node_idx": 3},
+    {
+        "text": "β-oxidation of one palmitate (C16) yields 8 acetyl-CoA, 7 NADH, and 7 FADH₂.",
+        "page": 612,
+        "pdf_idx": 0,
+        "node_idx": 0,
+    },
+    {
+        "text": "The carnitine shuttle (CPT-I/CPT-II) is rate-limiting for long-chain acyl entry into the matrix.",
+        "page": 615,
+        "pdf_idx": 0,
+        "node_idx": 0,
+    },
+    {
+        "text": "CPT-I is inhibited by malonyl-CoA, reciprocally coupling fatty-acid synthesis and oxidation.",
+        "page": 617,
+        "pdf_idx": 0,
+        "node_idx": 1,
+    },
+    {
+        "text": "Saponification is base-catalyzed hydrolysis of the ester bonds in a triacylglycerol.",
+        "page": 88,
+        "pdf_idx": 0,
+        "node_idx": 1,
+    },
+    {
+        "text": "Hexokinase is feedback-inhibited by its product glucose-6-phosphate.",
+        "page": 433,
+        "pdf_idx": 1,
+        "node_idx": 2,
+    },
+    {
+        "text": "PFK-1 is the committed step of glycolysis, activated by AMP and fructose-2,6-bisphosphate.",
+        "page": 437,
+        "pdf_idx": 1,
+        "node_idx": 2,
+    },
+    {
+        "text": "Pyruvate kinase catalyzes a substrate-level phosphorylation that yields ATP.",
+        "page": 441,
+        "pdf_idx": 1,
+        "node_idx": 3,
+    },
 ]
 
 KB_EDGES = [
@@ -188,13 +256,17 @@ async def _resolve_node_pool(session: AsyncSession, course_id: int) -> dict[str,
     if len(pool) < len(hints):
         # fallback: deepest nodes fill the gaps deterministically
         leaves = (
-            await session.execute(
-                select(OutlineNode.id)
-                .where(OutlineNode.course_id == course_id)
-                .order_by(OutlineNode.depth.desc(), OutlineNode.id)
-                .limit(len(hints))
+            (
+                await session.execute(
+                    select(OutlineNode.id)
+                    .where(OutlineNode.course_id == course_id)
+                    .order_by(OutlineNode.depth.desc(), OutlineNode.id)
+                    .limit(len(hints))
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         for hint in hints:
             if hint not in pool and leaves:
                 pool[hint] = leaves[len(pool) % len(leaves)]
@@ -205,13 +277,17 @@ async def _kb_nodes(session: AsyncSession, course_id: int, n: int) -> list[int]:
     """Up to `n` distinct deepest outline nodes for the course — the targets KB
     rows tag/link. Deterministic order (depth desc, id)."""
     return (
-        await session.execute(
-            select(OutlineNode.id)
-            .where(OutlineNode.course_id == course_id)
-            .order_by(OutlineNode.depth.desc(), OutlineNode.id)
-            .limit(n)
+        (
+            await session.execute(
+                select(OutlineNode.id)
+                .where(OutlineNode.course_id == course_id)
+                .order_by(OutlineNode.depth.desc(), OutlineNode.id)
+                .limit(n)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
 
 async def seed_kb(session: AsyncSession, course: Course) -> tuple[int, int, int, int]:
@@ -345,12 +421,16 @@ async def wipe(session: AsyncSession) -> int:
     Also clears dev-namespaced KB substrate (pdf_sources→facts→tags cascade,
     notion_pages) and all concept_edges (dev seed is their only writer here)."""
     q_ids = (
-        await session.execute(select(Question.id).where(Question.qid.like(f"{QID_PREFIX}%")))
-    ).scalars().all()
+        (await session.execute(select(Question.id).where(Question.qid.like(f"{QID_PREFIX}%"))))
+        .scalars()
+        .all()
+    )
     if q_ids:
         a_ids = (
-            await session.execute(select(Attempt.id).where(Attempt.question_id.in_(q_ids)))
-        ).scalars().all()
+            (await session.execute(select(Attempt.id).where(Attempt.question_id.in_(q_ids))))
+            .scalars()
+            .all()
+        )
         if a_ids:
             await session.execute(delete(AttemptNote).where(AttemptNote.attempt_id.in_(a_ids)))
         await session.execute(delete(Attempt).where(Attempt.question_id.in_(q_ids)))
@@ -362,7 +442,9 @@ async def wipe(session: AsyncSession) -> int:
     # column; the dev seed is their only writer here (similarity derivation is
     # unwired in dev), so clear them wholesale.
     await session.execute(delete(PdfSource).where(PdfSource.sha256.like(f"{QID_PREFIX}%")))
-    await session.execute(delete(NotionPage).where(NotionPage.notion_page_id.like(f"{QID_PREFIX}%")))
+    await session.execute(
+        delete(NotionPage).where(NotionPage.notion_page_id.like(f"{QID_PREFIX}%"))
+    )
     await session.execute(delete(ConceptEdge))
     return len(q_ids)
 
@@ -417,14 +499,20 @@ async def seed(session: AsyncSession, course_slug: str) -> None:
 
         # node tag(s): schema_map (confidence NULL) + one llm tag with confidence
         node_id = pool[qd["node_hint"]]
-        session.add(QuestionTag(question_id=q.id, node_id=node_id, source="schema_map", confidence=None))
+        session.add(
+            QuestionTag(question_id=q.id, node_id=node_id, source="schema_map", confidence=None)
+        )
         made_t += 1
         # a low-confidence llm tag on every 3rd question → exercises needs-review
         if qi % 3 == 0:
             session.add(
                 QuestionTag(
-                    question_id=q.id, node_id=node_id, source="llm",
-                    confidence=0.42, manual_review=True, extractor_version="dev",
+                    question_id=q.id,
+                    node_id=node_id,
+                    source="llm",
+                    confidence=0.42,
+                    manual_review=True,
+                    extractor_version="dev",
                 )
             )
             made_t += 1
@@ -435,7 +523,9 @@ async def seed(session: AsyncSession, course_slug: str) -> None:
         n_attempts = rng.choice([1, 2, 3])
         for ai in range(n_attempts):
             test_id, days_ago = SESSIONS[(qi + ai) % len(SESSIONS)]
-            day = (now - timedelta(days=days_ago)).replace(hour=9, minute=40, second=0, microsecond=0)
+            day = (now - timedelta(days=days_ago)).replace(
+                hour=9, minute=40, second=0, microsecond=0
+            )
             attempted = day + timedelta(minutes=rng.randint(0, 50))
             # later attempts trend correct (learning); first attempt often the common-wrong
             correct = ai == n_attempts - 1 and rng.random() > 0.35

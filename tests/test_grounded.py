@@ -31,7 +31,9 @@ def _recall(*candidates: Candidate, version: str = "v1") -> RecallResult:
     return RecallResult(candidates=list(candidates), embedding_version=version)
 
 
-def _cand(node_id: int, *, path: str | None, score: float = 0.9, via: str = "embedding") -> Candidate:
+def _cand(
+    node_id: int, *, path: str | None, score: float = 0.9, via: str = "embedding"
+) -> Candidate:
     return Candidate(node_id=node_id, path=path, score=score, via=via)
 
 
@@ -94,9 +96,7 @@ def test_schema_is_strict_and_closed():
 def test_schema_node_index_is_int_enum_1_to_n():
     """V44: int enum [1..N] is the grammar constraint."""
     schema = build_pick_schema(4)
-    idx = schema["json_schema"]["schema"]["properties"]["tags"]["items"]["properties"][
-        "node_index"
-    ]
+    idx = schema["json_schema"]["schema"]["properties"]["tags"]["items"]["properties"]["node_index"]
     assert idx["type"] == "integer"
     assert idx["enum"] == [1, 2, 3, 4]
 
@@ -155,9 +155,7 @@ async def test_pick_maps_to_node_and_calibrates():
         _cand(10, path="root >> alpha"),
         _cand(20, path="root >> beta", via="edge", score=0.7),
     )
-    tagging = _tagging_client(
-        [{"node_index": 2, "rationale": "beta fits"}]
-    )
+    tagging = _tagging_client([{"node_index": 2, "rationale": "beta fits"}])
     # Calibrator: Yes dominates → high confidence, no manual_review.
     calib = _calibrator_client(yes=-0.05, no=-4.0)
 
@@ -170,11 +168,11 @@ async def test_pick_maps_to_node_and_calibrates():
 
     assert len(result.tags) == 1
     tag = result.tags[0]
-    assert tag.node_id == 20            # node_index 2 → second candidate
+    assert tag.node_id == 20  # node_index 2 → second candidate
     assert tag.path == "root >> beta"
     assert tag.candidate_index == 2
     assert tag.via == "edge"
-    assert tag.calibrated_confidence > 0.9     # V69 logprob grade — sole confidence
+    assert tag.calibrated_confidence > 0.9  # V69 logprob grade — sole confidence
     assert tag.manual_review is False
     calib.chat.completions.create.assert_awaited()  # V69 ran
 
@@ -204,9 +202,7 @@ async def test_service_tier_threaded_into_tagging_and_calibrator(monkeypatch):
 async def test_calibration_below_half_sets_manual_review():
     """V69 / V-T3: calibrated <0.5 ⇒ manual_review."""
     res = _recall(_cand(10, path="root >> alpha"))
-    tagging = _tagging_client(
-        [{"node_index": 1, "rationale": "sure"}]
-    )
+    tagging = _tagging_client([{"node_index": 1, "rationale": "sure"}])
     calib = _calibrator_client(yes=-3.0, no=-0.1)  # No dominates → <0.5
 
     result = await generate_grounded_tags(
@@ -268,9 +264,7 @@ async def test_duplicate_index_deduped():
 
 async def test_unparsed_node_index_warns_and_skips():
     res = _recall(_cand(10, path="root >> alpha"))
-    tagging = _tagging_client(
-        [{"node_index": "two", "rationale": "bad"}]
-    )
+    tagging = _tagging_client([{"node_index": "two", "rationale": "bad"}])
     calib = _calibrator_client(yes=-0.1, no=-3.0)
 
     result = await generate_grounded_tags(
@@ -290,9 +284,7 @@ async def test_unparsed_node_index_warns_and_skips():
 
 async def test_pathless_candidate_uses_node_fallback_label():
     res = _recall(_cand(10, path=None, via="edge"))
-    tagging = _tagging_client(
-        [{"node_index": 1, "rationale": "ok"}]
-    )
+    tagging = _tagging_client([{"node_index": 1, "rationale": "ok"}])
     calib = _calibrator_client(yes=-0.1, no=-3.0)
 
     result = await generate_grounded_tags(
@@ -310,9 +302,7 @@ async def test_token_usage_recorded():
     res = _recall(_cand(10, path="root >> alpha"))
     tagging = make_client(
         make_completion(
-            content=json.dumps(
-                {"tags": [{"node_index": 1, "rationale": "ok"}]}
-            ),
+            content=json.dumps({"tags": [{"node_index": 1, "rationale": "ok"}]}),
             prompt_tokens=512,
             completion_tokens=40,
             cached_tokens=128,

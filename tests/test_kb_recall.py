@@ -93,9 +93,7 @@ def _emb_row(
     )
 
 
-async def _make_question(
-    session: AsyncSession, *, stem: str = "stem text"
-) -> Question:
+async def _make_question(session: AsyncSession, *, stem: str = "stem text") -> Question:
     q = Question(
         source="uworld",
         qid=f"q-{_uuid.uuid4().hex[:10]}",
@@ -175,16 +173,12 @@ async def test_load_embedding_returns_persisted_vector(db_session: AsyncSession)
     db_session.add(_emb_row(leaves[0].id, [0.1, 0.2, 0.3]))
     await db_session.flush()
 
-    vec = await load_embedding(
-        db_session, entity_kind="outline_node", entity_id=leaves[0].id
-    )
+    vec = await load_embedding(db_session, entity_kind="outline_node", entity_id=leaves[0].id)
     assert vec == [0.1, 0.2, 0.3]
 
 
 async def test_load_embedding_missing_returns_none(db_session: AsyncSession):
-    vec = await load_embedding(
-        db_session, entity_kind="outline_node", entity_id=99999999
-    )
+    vec = await load_embedding(db_session, entity_kind="outline_node", entity_id=99999999)
     assert vec is None
 
 
@@ -327,9 +321,9 @@ async def test_edge_expansion_follows_similarity_not_manual(
     )
 
     node_ids = [c.node_id for c in result.candidates]
-    assert leaves[0].id in node_ids       # seed via embedding
-    assert leaves[1].id in node_ids       # via similarity edge
-    assert leaves[2].id not in node_ids   # manual edge ⊥ followed (V-E2)
+    assert leaves[0].id in node_ids  # seed via embedding
+    assert leaves[1].id in node_ids  # via similarity edge
+    assert leaves[2].id not in node_ids  # manual edge ⊥ followed (V-E2)
 
     edge_cand = next(c for c in result.candidates if c.node_id == leaves[1].id)
     assert edge_cand.via == "edge"
@@ -384,9 +378,7 @@ async def test_exemplars_filter_source_and_manual_review(db_session: AsyncSessio
     # exemplar floor (0.7) to exercise the recall-level filter cleanly.
     db_session.add(_tag(q_low.id, node_id, source="llm", confidence=0.6))
     # manual_review=True → excluded even though confidence is otherwise fine
-    db_session.add(
-        _tag(q_flagged.id, node_id, source="llm", confidence=0.95, manual_review=True)
-    )
+    db_session.add(_tag(q_flagged.id, node_id, source="llm", confidence=0.95, manual_review=True))
     db_session.add(_tag(q_manual.id, node_id, source="manual", confidence=None))
     db_session.add(_tag(q_schema.id, node_id, source="schema_map", confidence=None))
     await db_session.flush()
@@ -494,8 +486,8 @@ async def test_embedding_floor_drops_below_min_score(db_session: AsyncSession):
     than handed to the LLM as a 'least-bad' pick."""
 
     course, _, leaves = await _make_course_and_tree(db_session, leaves=2)
-    db_session.add(_emb_row(leaves[0].id, [1.0, 0.0]))   # cosine 1.0 — kept
-    db_session.add(_emb_row(leaves[1].id, [0.1, 1.0]))   # cosine ~0.10 — dropped
+    db_session.add(_emb_row(leaves[0].id, [1.0, 0.0]))  # cosine 1.0 — kept
+    db_session.add(_emb_row(leaves[1].id, [0.1, 1.0]))  # cosine ~0.10 — dropped
     await db_session.flush()
 
     result = await retrieve_candidates(
@@ -519,7 +511,7 @@ async def test_edge_expansion_capped_at_top_n(db_session: AsyncSession):
     """E: the T2T fan-out is bounded so it can't flood the candidate list."""
 
     course, _, leaves = await _make_course_and_tree(db_session, leaves=7)
-    db_session.add(_emb_row(leaves[0].id, [1.0, 0.0]))   # sole seed
+    db_session.add(_emb_row(leaves[0].id, [1.0, 0.0]))  # sole seed
     await db_session.flush()
     for i in range(1, 7):  # 6 similarity neighbours of the seed
         a, b = sorted([leaves[0].id, leaves[i].id])
@@ -587,16 +579,12 @@ async def test_content_recall_silver_is_discounted_and_review_gated(
 
     n_silver = await _make_fact(db_session, course_id=course.id, text="silver neighbour")
     db_session.add(_emb_row(n_silver.id, [1.0, 0.0], entity_kind="atomic_fact"))
-    db_session.add(
-        _fact_tag(n_silver.id, silver_node, source="llm", confidence=0.8)
-    )
+    db_session.add(_fact_tag(n_silver.id, silver_node, source="llm", confidence=0.8))
 
     n_flagged = await _make_fact(db_session, course_id=course.id, text="flagged neighbour")
     db_session.add(_emb_row(n_flagged.id, [1.0, 0.0], entity_kind="atomic_fact"))
     db_session.add(
-        _fact_tag(
-            n_flagged.id, flagged_node, source="llm", confidence=0.95, manual_review=True
-        )
+        _fact_tag(n_flagged.id, flagged_node, source="llm", confidence=0.95, manual_review=True)
     )
     await db_session.flush()
 
@@ -668,4 +656,3 @@ def test_recall_source_does_not_touch_time_seconds():
         if isinstance(node, ast.Import):
             for alias in node.names:
                 assert "Attempt" not in alias.name, "recall.py ⊥ import Attempt (V-E2)"
-

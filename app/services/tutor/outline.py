@@ -73,9 +73,7 @@ def _row(
 
 
 async def _load_course_by_slug(session: AsyncSession, slug: str) -> Course:
-    course = (
-        await session.execute(select(Course).where(Course.slug == slug))
-    ).scalar_one_or_none()
+    course = (await session.execute(select(Course).where(Course.slug == slug))).scalar_one_or_none()
     if course is None:
         raise CourseNotFoundError(slug)
     return course
@@ -96,17 +94,17 @@ async def resolve_node_labels(
     if not ids:
         return {}
     target_rows = (
-        await session.execute(select(OutlineNode).where(OutlineNode.id.in_(ids)))
-    ).scalars().all()
+        (await session.execute(select(OutlineNode).where(OutlineNode.id.in_(ids)))).scalars().all()
+    )
     if not target_rows:
         return {}
 
     course_ids = {n.course_id for n in target_rows}
     all_rows = (
-        await session.execute(
-            select(OutlineNode).where(OutlineNode.course_id.in_(course_ids))
-        )
-    ).scalars().all()
+        (await session.execute(select(OutlineNode).where(OutlineNode.course_id.in_(course_ids))))
+        .scalars()
+        .all()
+    )
     node_by_id = {n.id: n for n in all_rows}
 
     return {
@@ -151,31 +149,25 @@ async def search_nodes(
     # cache of all nodes in the involved courses. Two passes keep the SQL
     # simple (substring filter on lowered name) while the path walk stays
     # in-process — same pattern as `OutlineLookup.path_of`.
-    candidate_rows = (
-        await session.execute(stmt)
-    ).scalars().all()
-    candidates = [
-        n for n in candidate_rows if needle in n.name.lower()
-    ]
+    candidate_rows = (await session.execute(stmt)).scalars().all()
+    candidates = [n for n in candidate_rows if needle in n.name.lower()]
     if not candidates:
         return []
 
     course_ids = {n.course_id for n in candidates}
     courses_by_id: dict[int, Course] = {
         c.id: c
-        for c in (
-            await session.execute(
-                select(Course).where(Course.id.in_(course_ids))
-            )
-        ).scalars().all()
+        for c in (await session.execute(select(Course).where(Course.id.in_(course_ids))))
+        .scalars()
+        .all()
     }
     nodes_by_course: dict[int, dict[int, OutlineNode]] = {}
     for cid in course_ids:
         rows = (
-            await session.execute(
-                select(OutlineNode).where(OutlineNode.course_id == cid)
-            )
-        ).scalars().all()
+            (await session.execute(select(OutlineNode).where(OutlineNode.course_id == cid)))
+            .scalars()
+            .all()
+        )
         nodes_by_course[cid] = {n.id: n for n in rows}
 
     def _rank(n: OutlineNode) -> int:
@@ -210,12 +202,16 @@ async def get_outline_tree(
     """
     course = await _load_course_by_slug(session, course_slug)
     rows = (
-        await session.execute(
-            select(OutlineNode)
-            .where(OutlineNode.course_id == course.id)
-            .order_by(OutlineNode.depth, OutlineNode.position, OutlineNode.id)
+        (
+            await session.execute(
+                select(OutlineNode)
+                .where(OutlineNode.course_id == course.id)
+                .order_by(OutlineNode.depth, OutlineNode.position, OutlineNode.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     node_by_id = {n.id: n for n in rows}
     return {
         "course": {
@@ -260,10 +256,10 @@ async def get_subtree(
         raise CourseNotFoundError(f"course_id={root.course_id}")
 
     rows = (
-        await session.execute(
-            select(OutlineNode).where(OutlineNode.course_id == course.id)
-        )
-    ).scalars().all()
+        (await session.execute(select(OutlineNode).where(OutlineNode.course_id == course.id)))
+        .scalars()
+        .all()
+    )
     node_by_id = {n.id: n for n in rows}
 
     ids = await subtree_node_ids(session, node_id)

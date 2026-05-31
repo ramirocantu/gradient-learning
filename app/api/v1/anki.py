@@ -26,6 +26,7 @@ from app.services.anki.queries import (
     list_review_queue,
 )
 from app.services.anki.review_metrics import retention_by_card, retrievability
+
 # FENCED (T18, V-RB2, V-O5): topic/CC-scoped helpers consume FENCED
 # `app.services.anki.{queries,state,retention}`. The /cards?topic_id=N and
 # /performance routes below are commented out; their imports are dropped

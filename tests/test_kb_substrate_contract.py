@@ -174,8 +174,7 @@ async def test_v_kb1_migration_full_roundtrip(ephemeral_db):
     ):
         r = await _run_alembic(args, db_url=url)
         assert r.returncode == 0, (
-            f"alembic {' '.join(args)} failed:\n"
-            f"STDOUT:\n{r.stdout}\nSTDERR:\n{r.stderr}"
+            f"alembic {' '.join(args)} failed:\nSTDOUT:\n{r.stdout}\nSTDERR:\n{r.stderr}"
         )
 
 
@@ -215,13 +214,17 @@ async def test_v_e1_dim_mismatch_raises(db_session: AsyncSession):
 
     # Nothing persisted.
     rows = (
-        await db_session.execute(
-            select(ContentEmbedding).where(
-                ContentEmbedding.entity_kind == "atomic_fact",
-                ContentEmbedding.entity_id == 1,
+        (
+            await db_session.execute(
+                select(ContentEmbedding).where(
+                    ContentEmbedding.entity_kind == "atomic_fact",
+                    ContentEmbedding.entity_id == 1,
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert rows == []
 
 
@@ -270,13 +273,17 @@ async def test_v_e1_version_bump_triggers_reembed(db_session: AsyncSession):
 
     assert r_old.row.id != r_new.row.id
     rows = (
-        await db_session.execute(
-            select(ContentEmbedding).where(
-                ContentEmbedding.entity_kind == "question",
-                ContentEmbedding.entity_id == 99,
+        (
+            await db_session.execute(
+                select(ContentEmbedding).where(
+                    ContentEmbedding.entity_kind == "question",
+                    ContentEmbedding.entity_id == 99,
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     versions = {r.embedding_version for r in rows}
     assert versions == {
         "text-embedding-3-small-v1",
@@ -336,10 +343,10 @@ async def test_v_n2_resync_returns_same_notion_page_id(db_session: AsyncSession)
     client.pages.create.assert_awaited_once()
 
     pointers = (
-        await db_session.execute(
-            select(NotionPage).where(NotionPage.node_id == node.id)
-        )
-    ).scalars().all()
+        (await db_session.execute(select(NotionPage).where(NotionPage.node_id == node.id)))
+        .scalars()
+        .all()
+    )
     assert len(pointers) == 1
 
 

@@ -65,8 +65,8 @@ class GroundedTag:
 
     node_id: int
     path: str | None
-    candidate_index: int        # 1..N position the model picked
-    via: str                    # candidate.via ('embedding' | 'edge')
+    candidate_index: int  # 1..N position the model picked
+    via: str  # candidate.via ('embedding' | 'edge')
     rationale: str
     calibrated_confidence: float
     manual_review: bool
@@ -159,11 +159,7 @@ def build_system_prompt(recall_result: RecallResult) -> str:
     """
 
     candidate_block = format_candidates_for_prompt(recall_result)
-    return (
-        f"{_SYSTEM_PREAMBLE}\n"
-        "# Candidate outline nodes\n\n"
-        f"{candidate_block}\n"
-    )
+    return f"{_SYSTEM_PREAMBLE}\n# Candidate outline nodes\n\n{candidate_block}\n"
 
 
 def _format_user_message(entity_text: str) -> str:

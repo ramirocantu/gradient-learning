@@ -147,14 +147,12 @@ async def load_embedding(
     return list(row.embedding)
 
 
-async def _load_course_node_map(
-    session: AsyncSession, *, course_id: int
-) -> dict[int, OutlineNode]:
+async def _load_course_node_map(session: AsyncSession, *, course_id: int) -> dict[int, OutlineNode]:
     rows = (
-        await session.execute(
-            select(OutlineNode).where(OutlineNode.course_id == course_id)
-        )
-    ).scalars().all()
+        (await session.execute(select(OutlineNode).where(OutlineNode.course_id == course_id)))
+        .scalars()
+        .all()
+    )
     return {n.id: n for n in rows}
 
 
@@ -265,14 +263,17 @@ async def _expand_via_edges(
         return []
 
     rows = (
-        await session.execute(
-            select(ConceptEdge).where(
-                ConceptEdge.kind == "similarity",
-                (ConceptEdge.src_node_id.in_(seeds))
-                | (ConceptEdge.dst_node_id.in_(seeds)),
+        (
+            await session.execute(
+                select(ConceptEdge).where(
+                    ConceptEdge.kind == "similarity",
+                    (ConceptEdge.src_node_id.in_(seeds)) | (ConceptEdge.dst_node_id.in_(seeds)),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     best: dict[int, float] = {}
     for edge in rows:
@@ -400,10 +401,14 @@ async def _content_candidates(
 
     neighbor_ids = [fid for fid, _, _ in scored]
     tag_rows = (
-        await session.execute(
-            select(AtomicFactTag).where(AtomicFactTag.atomic_fact_id.in_(neighbor_ids))
+        (
+            await session.execute(
+                select(AtomicFactTag).where(AtomicFactTag.atomic_fact_id.in_(neighbor_ids))
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     tags_by_fact: dict[int, list[AtomicFactTag]] = {}
     for t in tag_rows:
         tags_by_fact.setdefault(t.atomic_fact_id, []).append(t)
@@ -424,9 +429,7 @@ async def _content_candidates(
             else:
                 continue
             score = cos * weight
-            ex = Exemplar(
-                entity_kind="atomic_fact", entity_id=fid, text=text, score=cos
-            )
+            ex = Exemplar(entity_kind="atomic_fact", entity_id=fid, text=text, score=cos)
             cur = agg.get(t.node_id)
             if cur is None:
                 agg[t.node_id] = {"score": score, "via": via, "exemplars": [ex]}
@@ -597,15 +600,11 @@ def format_candidates_for_prompt(
     lines: list[str] = []
     for i, cand in enumerate(result.candidates, start=1):
         label = cand.path or f"node:{cand.node_id}"
-        lines.append(
-            f"{i}. [{cand.via}, score={cand.score:.3f}] {label}"
-        )
+        lines.append(f"{i}. [{cand.via}, score={cand.score:.3f}] {label}")
         if include_exemplars and cand.exemplars:
             for ex in cand.exemplars:
                 snippet = ex.text.strip().replace("\n", " ")
                 if len(snippet) > max_exemplar_chars:
                     snippet = snippet[: max_exemplar_chars - 1] + "…"
-                lines.append(
-                    f"   - exemplar [{ex.entity_kind}] (score={ex.score:.2f}): {snippet}"
-                )
+                lines.append(f"   - exemplar [{ex.entity_kind}] (score={ex.score:.2f}): {snippet}")
     return "\n".join(lines)

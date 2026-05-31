@@ -11,14 +11,10 @@ from app.services.llm import calibrator
 from tests._openai_mocks import make_client
 
 
-def _logprobs_completion(
-    *, chosen_token: str, top: list[tuple[str, float]]
-) -> SimpleNamespace:
+def _logprobs_completion(*, chosen_token: str, top: list[tuple[str, float]]) -> SimpleNamespace:
     """Forge a `ChatCompletion`-shaped object with the logprobs block the
     calibrator reads (`choice.logprobs.content[0].top_logprobs`)."""
-    candidates = [
-        SimpleNamespace(token=tok, logprob=lp, bytes=None) for tok, lp in top
-    ]
+    candidates = [SimpleNamespace(token=tok, logprob=lp, bytes=None) for tok, lp in top]
     first = SimpleNamespace(
         token=chosen_token,
         logprob=top[0][1] if top else 0.0,
@@ -104,9 +100,7 @@ async def test_neither_token_present_falls_back_to_zero():
 
 async def test_grade_yes_no_uses_max_one_completion_token():
     """V69: discriminator runs on a plain completion with a single emitted token."""
-    completion = _logprobs_completion(
-        chosen_token="Yes", top=[("Yes", -0.05), ("No", -3.0)]
-    )
+    completion = _logprobs_completion(chosen_token="Yes", top=[("Yes", -0.05), ("No", -3.0)])
     client = make_client(completion)
 
     await calibrator.grade_yes_no(
@@ -126,9 +120,7 @@ async def test_grade_yes_no_uses_max_one_completion_token():
 
 async def test_grade_yes_no_passes_reasoning_effort_none_by_default():
     """V-L5: reasoning OFF is required on GPT-5.x to get logprobs back."""
-    completion = _logprobs_completion(
-        chosen_token="Yes", top=[("Yes", -0.05), ("No", -3.0)]
-    )
+    completion = _logprobs_completion(chosen_token="Yes", top=[("Yes", -0.05), ("No", -3.0)])
     client = make_client(completion)
 
     await calibrator.grade_yes_no(prompt="?", openai_client=client, model="gpt-5.4-nano")
@@ -139,9 +131,7 @@ async def test_grade_yes_no_passes_reasoning_effort_none_by_default():
 
 async def test_grade_yes_no_omits_reasoning_effort_when_none():
     """Legacy non-reasoning models reject the flag — None omits it entirely."""
-    completion = _logprobs_completion(
-        chosen_token="Yes", top=[("Yes", -0.05), ("No", -3.0)]
-    )
+    completion = _logprobs_completion(chosen_token="Yes", top=[("Yes", -0.05), ("No", -3.0)])
     client = make_client(completion)
 
     await calibrator.grade_yes_no(
@@ -154,9 +144,7 @@ async def test_grade_yes_no_omits_reasoning_effort_when_none():
 
 async def test_grade_yes_no_service_tier_forwarded_and_omitted():
     """V-L5: service_tier forwarded when set, omitted (default) otherwise."""
-    completion = _logprobs_completion(
-        chosen_token="Yes", top=[("Yes", -0.05), ("No", -3.0)]
-    )
+    completion = _logprobs_completion(chosen_token="Yes", top=[("Yes", -0.05), ("No", -3.0)])
 
     client_flex = make_client(completion)
     await calibrator.grade_yes_no(
@@ -166,7 +154,9 @@ async def test_grade_yes_no_service_tier_forwarded_and_omitted():
 
     client_none = make_client(completion)
     await calibrator.grade_yes_no(
-        prompt="?", openai_client=client_none, model="gpt-5.4-nano"  # default None
+        prompt="?",
+        openai_client=client_none,
+        model="gpt-5.4-nano",  # default None
     )
     assert "service_tier" not in client_none.chat.completions.create.await_args.kwargs
 
@@ -191,9 +181,7 @@ async def test_case_insensitive_yes_token():
 
 async def test_calibrate_tag_builds_discriminator_prompt():
     """`calibrate_tag` wraps `grade_yes_no` with the standard prompt."""
-    completion = _logprobs_completion(
-        chosen_token="Yes", top=[("Yes", -0.1), ("No", -2.0)]
-    )
+    completion = _logprobs_completion(chosen_token="Yes", top=[("Yes", -0.1), ("No", -2.0)])
     client = make_client(completion)
 
     await calibrator.calibrate_tag(

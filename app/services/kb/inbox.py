@@ -34,9 +34,9 @@ _logger = logging.getLogger("app.services.kb.inbox")
 @dataclass
 class InboxReport:
     files_seen: int = 0
-    files_ingested: int = 0      # parsed this run (not SHA-reused)
-    files_reused: int = 0        # already ingested (SHA short-circuit)
-    files_skipped: int = 0       # no resolvable course slug
+    files_ingested: int = 0  # parsed this run (not SHA-reused)
+    files_reused: int = 0  # already ingested (SHA short-circuit)
+    files_skipped: int = 0  # no resolvable course slug
     new_facts: int = 0
     failures: list[str] = field(default_factory=list)
 
@@ -46,9 +46,7 @@ class InboxReport:
 
 
 async def _resolve_course(session: AsyncSession, slug: str) -> Course | None:
-    return (
-        await session.execute(select(Course).where(Course.slug == slug))
-    ).scalar_one_or_none()
+    return (await session.execute(select(Course).where(Course.slug == slug))).scalar_one_or_none()
 
 
 async def poll_inbox(

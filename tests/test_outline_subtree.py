@@ -40,16 +40,27 @@ async def engine():
 async def _seed(eng) -> dict[str, int]:
     async with AsyncSession(eng) as s:
         c = Course(slug="aamc", name="AAMC")
-        s.add(c); await s.flush()
+        s.add(c)
+        await s.flush()
+
         def mk(parent_id, kind, name, depth, pos):
-            n = OutlineNode(course_id=c.id, parent_id=parent_id, kind=kind, name=name, depth=depth, position=pos)
-            s.add(n); return n
-        sec = mk(None, "section", "CP", 0, 0); await s.flush()
-        fc1 = mk(sec.id, "fc", "FC1", 1, 0); await s.flush()
-        cc1 = mk(fc1.id, "cc", "1A", 2, 0); await s.flush()
+            n = OutlineNode(
+                course_id=c.id, parent_id=parent_id, kind=kind, name=name, depth=depth, position=pos
+            )
+            s.add(n)
+            return n
+
+        sec = mk(None, "section", "CP", 0, 0)
+        await s.flush()
+        fc1 = mk(sec.id, "fc", "FC1", 1, 0)
+        await s.flush()
+        cc1 = mk(fc1.id, "cc", "1A", 2, 0)
+        await s.flush()
         t1 = mk(cc1.id, "topic", "Amino acids", 3, 0)
-        t2 = mk(cc1.id, "topic", "Proteins", 3, 1); await s.flush()
-        fc2 = mk(sec.id, "fc", "FC2", 1, 1); await s.flush()
+        t2 = mk(cc1.id, "topic", "Proteins", 3, 1)
+        await s.flush()
+        fc2 = mk(sec.id, "fc", "FC2", 1, 1)
+        await s.flush()
         ids = {"sec": sec.id, "fc1": fc1.id, "cc1": cc1.id, "t1": t1.id, "t2": t2.id, "fc2": fc2.id}
         await s.commit()
         return ids
@@ -58,7 +69,12 @@ async def _seed(eng) -> dict[str, int]:
 async def test_subtree_node_ids_is_union_of_descendants_and_self(engine):
     ids = await _seed(engine)
     async with AsyncSession(engine) as s:
-        assert await subtree_node_ids(s, ids["fc1"]) == {ids["fc1"], ids["cc1"], ids["t1"], ids["t2"]}
+        assert await subtree_node_ids(s, ids["fc1"]) == {
+            ids["fc1"],
+            ids["cc1"],
+            ids["t1"],
+            ids["t2"],
+        }
         assert await subtree_node_ids(s, ids["sec"]) == set(ids.values())
         assert await subtree_node_ids(s, ids["t1"]) == {ids["t1"]}
 

@@ -117,14 +117,10 @@ async def test_list_courses_empty_then_populated(client: AsyncClient) -> None:
 async def test_import_happy_path_inserts_tree(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    create = await client.post(
-        "/api/v1/courses", json={"slug": "t21-course", "name": "T21 Course"}
-    )
+    create = await client.post("/api/v1/courses", json={"slug": "t21-course", "name": "T21 Course"})
     course_id = create.json()["id"]
 
-    r = await client.post(
-        f"/api/v1/courses/{course_id}/outline:import", json=_payload()
-    )
+    r = await client.post(f"/api/v1/courses/{course_id}/outline:import", json=_payload())
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["nodes_imported"] == 3
@@ -132,12 +128,16 @@ async def test_import_happy_path_inserts_tree(
 
     # DB-side: 3 rows with the expected parent/depth shape.
     rows = (
-        await db_session.execute(
-            select(OutlineNode)
-            .where(OutlineNode.course_id == course_id)
-            .order_by(OutlineNode.depth, OutlineNode.position)
+        (
+            await db_session.execute(
+                select(OutlineNode)
+                .where(OutlineNode.course_id == course_id)
+                .order_by(OutlineNode.depth, OutlineNode.position)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert [(n.depth, n.name) for n in rows] == [
         (0, "Root"),
         (1, "LeafA"),
@@ -152,37 +152,31 @@ async def test_import_reupload_is_idempotent_v_o3(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     """V-O3: re-upload wipes the prior outline and reinserts."""
-    create = await client.post(
-        "/api/v1/courses", json={"slug": "t21-course", "name": "T21 Course"}
-    )
+    create = await client.post("/api/v1/courses", json={"slug": "t21-course", "name": "T21 Course"})
     course_id = create.json()["id"]
 
-    r1 = await client.post(
-        f"/api/v1/courses/{course_id}/outline:import", json=_payload()
-    )
+    r1 = await client.post(f"/api/v1/courses/{course_id}/outline:import", json=_payload())
     assert r1.status_code == 200
 
     first_ids = {
         n.id
         for n in (
-            await db_session.execute(
-                select(OutlineNode).where(OutlineNode.course_id == course_id)
-            )
-        ).scalars().all()
+            await db_session.execute(select(OutlineNode).where(OutlineNode.course_id == course_id))
+        )
+        .scalars()
+        .all()
     }
     assert len(first_ids) == 3
 
-    r2 = await client.post(
-        f"/api/v1/courses/{course_id}/outline:import", json=_payload()
-    )
+    r2 = await client.post(f"/api/v1/courses/{course_id}/outline:import", json=_payload())
     assert r2.status_code == 200
     assert r2.json()["nodes_imported"] == 3
 
     second_rows = (
-        await db_session.execute(
-            select(OutlineNode).where(OutlineNode.course_id == course_id)
-        )
-    ).scalars().all()
+        (await db_session.execute(select(OutlineNode).where(OutlineNode.course_id == course_id)))
+        .scalars()
+        .all()
+    )
     # Same count, but every row is freshly inserted (wipe-then-insert, not merge).
     assert len(second_rows) == 3
     assert {n.id for n in second_rows}.isdisjoint(first_ids)
@@ -193,9 +187,7 @@ async def test_import_validation_failure_returns_422_and_leaves_db_clean_v_o2(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     """V-O2: whole-upload rejection on validation; no partial materialization."""
-    create = await client.post(
-        "/api/v1/courses", json={"slug": "t21-course", "name": "T21 Course"}
-    )
+    create = await client.post("/api/v1/courses", json={"slug": "t21-course", "name": "T21 Course"})
     course_id = create.json()["id"]
 
     bad = _payload()
@@ -217,10 +209,10 @@ async def test_import_validation_failure_returns_422_and_leaves_db_clean_v_o2(
 
     # DB untouched.
     rows = (
-        await db_session.execute(
-            select(OutlineNode).where(OutlineNode.course_id == course_id)
-        )
-    ).scalars().all()
+        (await db_session.execute(select(OutlineNode).where(OutlineNode.course_id == course_id)))
+        .scalars()
+        .all()
+    )
     assert rows == []
 
 
@@ -228,9 +220,7 @@ async def test_import_validation_failure_returns_422_and_leaves_db_clean_v_o2(
 async def test_import_collects_multiple_errors_in_one_response(
     client: AsyncClient,
 ) -> None:
-    create = await client.post(
-        "/api/v1/courses", json={"slug": "t21-course", "name": "T21 Course"}
-    )
+    create = await client.post("/api/v1/courses", json={"slug": "t21-course", "name": "T21 Course"})
     course_id = create.json()["id"]
 
     # Body slug matches course; multiple node-level problems.
@@ -253,9 +243,7 @@ async def test_import_collects_multiple_errors_in_one_response(
 
 @pytest.mark.asyncio
 async def test_import_slug_mismatch_returns_409(client: AsyncClient) -> None:
-    create = await client.post(
-        "/api/v1/courses", json={"slug": "t21-course", "name": "T21 Course"}
-    )
+    create = await client.post("/api/v1/courses", json={"slug": "t21-course", "name": "T21 Course"})
     course_id = create.json()["id"]
 
     body = _payload(slug="wrong-slug", name="Wrong")
@@ -266,9 +254,7 @@ async def test_import_slug_mismatch_returns_409(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_import_unknown_course_returns_404(client: AsyncClient) -> None:
-    r = await client.post(
-        "/api/v1/courses/999999/outline:import", json=_payload()
-    )
+    r = await client.post("/api/v1/courses/999999/outline:import", json=_payload())
     assert r.status_code == 404
 
 
@@ -277,9 +263,7 @@ async def test_import_unknown_course_returns_404(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_read_outline_empty_before_import(client: AsyncClient) -> None:
-    create = await client.post(
-        "/api/v1/courses", json={"slug": "t21-empty", "name": "Empty"}
-    )
+    create = await client.post("/api/v1/courses", json={"slug": "t21-empty", "name": "Empty"})
     course_id = create.json()["id"]
 
     r = await client.get(f"/api/v1/courses/{course_id}/outline")
@@ -293,9 +277,7 @@ async def test_read_outline_empty_before_import(client: AsyncClient) -> None:
 async def test_read_outline_returns_full_tree_in_depth_order(
     client: AsyncClient,
 ) -> None:
-    create = await client.post(
-        "/api/v1/courses", json={"slug": "t21-course", "name": "T21 Course"}
-    )
+    create = await client.post("/api/v1/courses", json={"slug": "t21-course", "name": "T21 Course"})
     course_id = create.json()["id"]
     await client.post(f"/api/v1/courses/{course_id}/outline:import", json=_payload())
 
@@ -323,7 +305,8 @@ async def test_outline_router_requires_coach_token(client: AsyncClient) -> None:
     """No token → 401/403 across the router (read + write)."""
     client.headers.pop("X-Coach-Token", None)
     assert (await client.get("/api/v1/courses")).status_code in (401, 403)
-    assert (
-        await client.post("/api/v1/courses", json={"slug": "x", "name": "X"})
-    ).status_code in (401, 403)
+    assert (await client.post("/api/v1/courses", json={"slug": "x", "name": "X"})).status_code in (
+        401,
+        403,
+    )
     assert (await client.get("/api/v1/courses/1/outline")).status_code in (401, 403)

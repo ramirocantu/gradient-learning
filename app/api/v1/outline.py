@@ -55,9 +55,7 @@ async def list_courses(
     """List all courses (slug-ordered). The SPA course picker needs to
     enumerate courses; per V-D1 that read extends the public API rather
     than a dashboard-private route."""
-    rows = (
-        await session.execute(select(Course).order_by(Course.slug))
-    ).scalars().all()
+    rows = (await session.execute(select(Course).order_by(Course.slug))).scalars().all()
     return [_course_payload(c) for c in rows]
 
 
@@ -169,12 +167,16 @@ async def read_outline(
     if course is None:
         raise HTTPException(status_code=404, detail=f"course id={course_id} not found")
     rows = (
-        await session.execute(
-            select(OutlineNode)
-            .where(OutlineNode.course_id == course_id)
-            .order_by(OutlineNode.depth, OutlineNode.position, OutlineNode.id)
+        (
+            await session.execute(
+                select(OutlineNode)
+                .where(OutlineNode.course_id == course_id)
+                .order_by(OutlineNode.depth, OutlineNode.position, OutlineNode.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return {
         "course": _course_payload(course),
         "nodes": [_node_payload(n) for n in rows],

@@ -138,9 +138,7 @@ async def test_captures_multi_tag_question_surfaces_both_nodes(
 
     [row] = await captures_svc.get_recent_captures(db_session, n=5)
     # deterministic order: sorted by node_id.
-    assert [t["node_id"] for t in row["topics"]] == sorted(
-        [ids["Amino acids"], ids["Enzymes"]]
-    )
+    assert [t["node_id"] for t in row["topics"]] == sorted([ids["Amino acids"], ids["Enzymes"]])
     assert {t["name"] for t in row["topics"]} == {"Amino acids", "Enzymes"}
 
 

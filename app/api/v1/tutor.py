@@ -115,13 +115,9 @@ async def search_outline_nodes(
     _: None = Depends(verify_coach_token),
 ) -> list[dict[str, Any]]:
     try:
-        return await outline_svc.search_nodes(
-            session, query=q, course_slug=course, limit=limit
-        )
+        return await outline_svc.search_nodes(session, query=q, course_slug=course, limit=limit)
     except outline_svc.CourseNotFoundError:
-        raise HTTPException(
-            404, detail={"reason": "course_not_found", "course_slug": course}
-        )
+        raise HTTPException(404, detail={"reason": "course_not_found", "course_slug": course})
 
 
 @router.get("/outline")
@@ -133,9 +129,7 @@ async def get_outline_tree(
     try:
         return await outline_svc.get_outline_tree(session, course_slug=course)
     except outline_svc.CourseNotFoundError:
-        raise HTTPException(
-            404, detail={"reason": "course_not_found", "course_slug": course}
-        )
+        raise HTTPException(404, detail={"reason": "course_not_found", "course_slug": course})
 
 
 @router.get("/outline/nodes/{node_id}/subtree")
@@ -147,9 +141,7 @@ async def get_node_subtree(
     try:
         return await outline_svc.get_subtree(session, node_id=node_id)
     except outline_svc.NodeNotFoundError:
-        raise HTTPException(
-            404, detail={"reason": "node_not_found", "node_id": node_id}
-        )
+        raise HTTPException(404, detail={"reason": "node_not_found", "node_id": node_id})
 
 
 @router.get("/healthz")

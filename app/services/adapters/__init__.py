@@ -20,10 +20,7 @@ class UnknownSourceError(ValueError):
 
     def __init__(self, source: str) -> None:
         self.source = source
-        super().__init__(
-            f"no source adapter registered for {source!r}; "
-            f"known: {sorted(_REGISTRY)}"
-        )
+        super().__init__(f"no source adapter registered for {source!r}; known: {sorted(_REGISTRY)}")
 
 
 class UnknownCourseError(ValueError):

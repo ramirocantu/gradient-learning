@@ -72,9 +72,7 @@ def test_empty_embedding_model_warns(tmp_path: Path):
     assert any("EMBEDDING_MODEL unset" in w for w in warnings)
 
 
-def test_warnings_emitted_on_logger(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
-):
+def test_warnings_emitted_on_logger(tmp_path: Path, caplog: pytest.LogCaptureFixture):
     bogus_inbox = tmp_path / "missing"
     s = _make_settings(
         NOTION_API_TOKEN=None,

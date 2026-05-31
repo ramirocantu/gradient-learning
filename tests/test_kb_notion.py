@@ -46,9 +46,7 @@ def _forge_notion_client(*, page_id: str = "notion-page-xyz") -> MagicMock:
     )
     client.blocks = MagicMock()
     client.blocks.children = MagicMock()
-    client.blocks.children.append = AsyncMock(
-        return_value={"object": "list", "results": []}
-    )
+    client.blocks.children.append = AsyncMock(return_value={"object": "list", "results": []})
     # Intentionally no .pages.retrieve / .databases.query — any code
     # path that tries to read Notion will raise AttributeError, which
     # is what V-N1 wants.
@@ -72,9 +70,7 @@ async def _make_course_node(session: AsyncSession) -> OutlineNode:
     return node
 
 
-async def _make_facts(
-    session: AsyncSession, course_id: int, texts: list[str]
-) -> list[AtomicFact]:
+async def _make_facts(session: AsyncSession, course_id: int, texts: list[str]) -> list[AtomicFact]:
     pdf = PdfSource(
         course_id=course_id,
         filename="x.pdf",
@@ -128,9 +124,7 @@ async def test_first_sync_creates_page_and_pointer(db_session: AsyncSession):
     client.blocks.children.append.assert_not_awaited()
 
     pointer = (
-        await db_session.execute(
-            select(NotionPage).where(NotionPage.node_id == node_id)
-        )
+        await db_session.execute(select(NotionPage).where(NotionPage.node_id == node_id))
     ).scalar_one()
     assert pointer.notion_page_id == "page-1"
     assert pointer.url.endswith("page-1")
@@ -173,15 +167,13 @@ async def test_resync_appends_blocks_no_page_rewrite(db_session: AsyncSession):
     client.blocks.children.append.assert_awaited_once()
 
     pointers = (
-        await db_session.execute(
-            select(NotionPage).where(NotionPage.node_id == node_id)
-        )
-    ).scalars().all()
+        (await db_session.execute(select(NotionPage).where(NotionPage.node_id == node_id)))
+        .scalars()
+        .all()
+    )
     assert len(pointers) == 1  # V-N2: one page per node
     assert "First fact long enough." in (pointers[0].tags or [None])[0]
-    assert any(
-        "Second fact long enough." in t for t in (pointers[0].tags or [])
-    )
+    assert any("Second fact long enough." in t for t in (pointers[0].tags or []))
 
 
 # --------------------------------------------------------------------------- #
@@ -200,9 +192,7 @@ async def test_no_read_endpoints_called(db_session: AsyncSession):
     client = _forge_notion_client()
 
     # Confirm the mock has no read attributes wired.
-    assert not hasattr(client.pages, "retrieve") or not isinstance(
-        client.pages.retrieve, AsyncMock
-    )
+    assert not hasattr(client.pages, "retrieve") or not isinstance(client.pages.retrieve, AsyncMock)
     # The sync must succeed without touching read paths.
     await sync_node_to_notion(
         db_session,
@@ -340,18 +330,14 @@ async def test_mirror_first_creates_page_and_records_block(db_session: AsyncSess
     # block id persisted on the factor row
     persisted = (
         await db_session.execute(
-            select(DiscriminatorFactor.notion_block_id).where(
-                DiscriminatorFactor.id == factor.id
-            )
+            select(DiscriminatorFactor.notion_block_id).where(DiscriminatorFactor.id == factor.id)
         )
     ).scalar_one()
     assert persisted == "block-1"
 
     # one pointer for the node (V-N2)
     pointer = (
-        await db_session.execute(
-            select(NotionPage).where(NotionPage.node_id == node.id)
-        )
+        await db_session.execute(select(NotionPage).where(NotionPage.node_id == node.id))
     ).scalar_one()
     assert pointer.notion_page_id == "d-page-1"
 

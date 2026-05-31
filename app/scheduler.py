@@ -678,9 +678,7 @@ async def _do_run_grounded_tag() -> None:
 
         client = build_openai_client()
         async with AsyncSessionLocal() as session:
-            report = await tag_pending(
-                session, tagging_client=client, calibrator_client=client
-            )
+            report = await tag_pending(session, tagging_client=client, calibrator_client=client)
             await session.commit()
 
         async with AsyncSessionLocal() as session:

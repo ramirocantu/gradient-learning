@@ -49,21 +49,34 @@ async def _seed_aamc_shape(eng) -> dict[str, int]:
 
         def mk(parent_id, kind, name, depth, pos):
             n = OutlineNode(
-                course_id=c.id, parent_id=parent_id, kind=kind, name=name,
-                depth=depth, position=pos,
+                course_id=c.id,
+                parent_id=parent_id,
+                kind=kind,
+                name=name,
+                depth=depth,
+                position=pos,
             )
             s.add(n)
             return n
 
-        sec = mk(None, "section", "CP", 0, 0); await s.flush()
-        fc1 = mk(sec.id, "fc", "FC1", 1, 0); await s.flush()
-        cc1a = mk(fc1.id, "cc", "1A", 2, 0); await s.flush()
+        sec = mk(None, "section", "CP", 0, 0)
+        await s.flush()
+        fc1 = mk(sec.id, "fc", "FC1", 1, 0)
+        await s.flush()
+        cc1a = mk(fc1.id, "cc", "1A", 2, 0)
+        await s.flush()
         t_amino = mk(cc1a.id, "topic", "Amino acids", 3, 0)
-        t_protein = mk(cc1a.id, "topic", "Proteins", 3, 1); await s.flush()
-        fc2 = mk(sec.id, "fc", "FC2", 1, 1); await s.flush()
+        t_protein = mk(cc1a.id, "topic", "Proteins", 3, 1)
+        await s.flush()
+        fc2 = mk(sec.id, "fc", "FC2", 1, 1)
+        await s.flush()
         ids = {
-            "sec": sec.id, "fc1": fc1.id, "cc1a": cc1a.id,
-            "amino": t_amino.id, "proteins": t_protein.id, "fc2": fc2.id,
+            "sec": sec.id,
+            "fc1": fc1.id,
+            "cc1a": cc1a.id,
+            "amino": t_amino.id,
+            "proteins": t_protein.id,
+            "fc2": fc2.id,
         }
         await s.commit()
         return ids

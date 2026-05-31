@@ -111,12 +111,8 @@ async def test_ingest_routes_uworld_and_stamps_source(engine):
         resp = await ingest_capture(_payload(), s)
         await s.commit()
     async with AsyncSession(engine) as s:
-        q = (
-            await s.execute(select(Question).where(Question.id == resp.question_id))
-        ).scalar_one()
-        a = (
-            await s.execute(select(Attempt).where(Attempt.id == resp.attempt_id))
-        ).scalar_one()
+        q = (await s.execute(select(Question).where(Question.id == resp.question_id))).scalar_one()
+        a = (await s.execute(select(Attempt).where(Attempt.id == resp.attempt_id))).scalar_one()
         rc = (
             await s.execute(select(RawCapture).where(RawCapture.id == resp.capture_id))
         ).scalar_one()
@@ -131,12 +127,8 @@ async def test_ingest_routes_web_qbank_and_stamps_source(engine):
         resp = await ingest_capture(_payload(source="web-qbank", qid="q-wq-1"), s)
         await s.commit()
     async with AsyncSession(engine) as s:
-        q = (
-            await s.execute(select(Question).where(Question.id == resp.question_id))
-        ).scalar_one()
-        a = (
-            await s.execute(select(Attempt).where(Attempt.id == resp.attempt_id))
-        ).scalar_one()
+        q = (await s.execute(select(Question).where(Question.id == resp.question_id))).scalar_one()
+        a = (await s.execute(select(Attempt).where(Attempt.id == resp.attempt_id))).scalar_one()
         rc = (
             await s.execute(select(RawCapture).where(RawCapture.id == resp.capture_id))
         ).scalar_one()
@@ -153,12 +145,8 @@ async def test_ingest_routes_manual_and_stamps_source(engine):
         )
         await s.commit()
     async with AsyncSession(engine) as s:
-        q = (
-            await s.execute(select(Question).where(Question.id == resp.question_id))
-        ).scalar_one()
-        a = (
-            await s.execute(select(Attempt).where(Attempt.id == resp.attempt_id))
-        ).scalar_one()
+        q = (await s.execute(select(Question).where(Question.id == resp.question_id))).scalar_one()
+        a = (await s.execute(select(Attempt).where(Attempt.id == resp.attempt_id))).scalar_one()
     assert q.source == "manual"
     assert a.source == "manual"
 

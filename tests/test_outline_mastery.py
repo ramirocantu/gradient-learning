@@ -59,8 +59,12 @@ async def _seed(db: AsyncSession) -> dict[str, int]:
 
     async def q(qid: str) -> int:
         row = Question(
-            source="uworld", qid=qid, stem_html="<p>q</p>", stem_plain="q",
-            choices=[{"label": "A", "text": "a"}], correct_choice="A",
+            source="uworld",
+            qid=qid,
+            stem_html="<p>q</p>",
+            stem_plain="q",
+            choices=[{"label": "A", "text": "a"}],
+            correct_choice="A",
         )
         db.add(row)
         await db.flush()
@@ -70,11 +74,15 @@ async def _seed(db: AsyncSession) -> dict[str, int]:
         db.add(QuestionTag(question_id=qid, node_id=node_id, source="manual", confidence=None))
 
     def attempt(qid: int, correct: bool, minute: int) -> None:
-        db.add(Attempt(
-            question_id=qid, source="uworld",
-            attempted_at=datetime(2026, 5, 27, 12, minute, tzinfo=timezone.utc),
-            selected_choice="A", is_correct=correct,
-        ))
+        db.add(
+            Attempt(
+                question_id=qid,
+                source="uworld",
+                attempted_at=datetime(2026, 5, 27, 12, minute, tzinfo=timezone.utc),
+                selected_choice="A",
+                is_correct=correct,
+            )
+        )
 
     q1, q2, q3, q4 = await q("Q1"), await q("Q2"), await q("Q3"), await q("Q4")
     tag(q1, ids["Amino acids"])

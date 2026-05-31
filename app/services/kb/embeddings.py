@@ -49,8 +49,8 @@ class DimMismatchError(ValueError):
 @dataclass
 class EmbedResult:
     row: ContentEmbedding
-    reused: bool        # True when an existing same-version row was returned
-    tokens: int         # OpenAI usage.prompt_tokens, 0 if reused
+    reused: bool  # True when an existing same-version row was returned
+    tokens: int  # OpenAI usage.prompt_tokens, 0 if reused
 
 
 def expected_dim(model: str | None = None) -> int | None:

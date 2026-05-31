@@ -68,9 +68,7 @@ async def write_discriminator_factor(
     if factor_text == "":
         raise ValueError("factor_text must not be empty or whitespace-only")
 
-    existing = await _find_existing(
-        session, question_id=question_id, factor_text=factor_text
-    )
+    existing = await _find_existing(session, question_id=question_id, factor_text=factor_text)
     if existing is not None:
         return existing
 
@@ -82,9 +80,7 @@ async def write_discriminator_factor(
 
     if node_id is not None:
         node = (
-            await session.execute(
-                select(OutlineNode).where(OutlineNode.id == node_id)
-            )
+            await session.execute(select(OutlineNode).where(OutlineNode.id == node_id))
         ).scalar_one_or_none()
         if node is None:
             raise NodeNotFoundError(f"node id={node_id} not found")
@@ -102,9 +98,7 @@ async def write_discriminator_factor(
         # between our SELECT and INSERT. Append-only + idempotent → roll back
         # and return the winner (V-M3, ⊥ duplicate).
         await session.rollback()
-        winner = await _find_existing(
-            session, question_id=question_id, factor_text=factor_text
-        )
+        winner = await _find_existing(session, question_id=question_id, factor_text=factor_text)
         if winner is None:
             raise
         return winner

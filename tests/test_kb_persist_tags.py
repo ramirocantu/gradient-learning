@@ -138,10 +138,10 @@ async def test_question_persist_creates_llm_rows(db_session: AsyncSession):
     assert out.primary_node_id is None  # questions carry no denormalized node
 
     rows = (
-        await db_session.execute(
-            select(QuestionTag).where(QuestionTag.question_id == q.id)
-        )
-    ).scalars().all()
+        (await db_session.execute(select(QuestionTag).where(QuestionTag.question_id == q.id)))
+        .scalars()
+        .all()
+    )
     assert len(rows) == 2
     for r in rows:
         assert r.source == "llm"
@@ -175,14 +175,14 @@ async def test_question_rerun_replaces_llm_preserves_manual(db_session: AsyncSes
         db_session, entity_kind="question", entity_id=q.id, result=res
     )
 
-    assert out.replaced == 1   # the one prior llm row
+    assert out.replaced == 1  # the one prior llm row
     assert out.persisted == 1
 
     rows = (
-        await db_session.execute(
-            select(QuestionTag).where(QuestionTag.question_id == q.id)
-        )
-    ).scalars().all()
+        (await db_session.execute(select(QuestionTag).where(QuestionTag.question_id == q.id)))
+        .scalars()
+        .all()
+    )
     by_source = sorted((r.source, r.node_id) for r in rows)
     # manual row preserved; single fresh llm row; old llm row gone.
     assert ("manual", nodes[0].id) in by_source
@@ -206,9 +206,7 @@ async def test_low_confidence_persisted_with_manual_review(db_session: AsyncSess
     assert out.manual_review_flagged == 1
 
     row = (
-        await db_session.execute(
-            select(QuestionTag).where(QuestionTag.question_id == q.id)
-        )
+        await db_session.execute(select(QuestionTag).where(QuestionTag.question_id == q.id))
     ).scalar_one()
     assert row.manual_review is True
     assert float(row.confidence) < 0.5  # surfaced for review, not discarded
@@ -235,10 +233,14 @@ async def test_atomic_fact_persist_sets_primary_node(db_session: AsyncSession):
     assert out.primary_node_id == nodes[1].id
 
     rows = (
-        await db_session.execute(
-            select(AtomicFactTag).where(AtomicFactTag.atomic_fact_id == fact.id)
+        (
+            await db_session.execute(
+                select(AtomicFactTag).where(AtomicFactTag.atomic_fact_id == fact.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(rows) == 2
     assert all(r.source == "llm" and r.extractor_version == EXTRACTOR for r in rows)
 
@@ -292,10 +294,14 @@ async def test_rerun_idempotent(db_session: AsyncSession):
     assert second.replaced == 1 and second.persisted == 1
 
     rows = (
-        await db_session.execute(
-            select(AtomicFactTag).where(AtomicFactTag.atomic_fact_id == fact.id)
+        (
+            await db_session.execute(
+                select(AtomicFactTag).where(AtomicFactTag.atomic_fact_id == fact.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(rows) == 1  # not duplicated
 
 

@@ -87,12 +87,16 @@ async def job_last_runs(session: AsyncSession) -> dict[str, TaskRun]:
     ``job_name`` for O(1) merge against the scheduler snapshot.
     """
     rows = (
-        await session.execute(
-            select(TaskRun)
-            .order_by(TaskRun.job_name, TaskRun.started_at.desc())
-            .distinct(TaskRun.job_name)
+        (
+            await session.execute(
+                select(TaskRun)
+                .order_by(TaskRun.job_name, TaskRun.started_at.desc())
+                .distinct(TaskRun.job_name)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return {row.job_name: row for row in rows}
 
 

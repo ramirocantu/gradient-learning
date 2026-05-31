@@ -53,7 +53,9 @@ async def _node_names(session: AsyncSession, node_ids: set[int]) -> dict[int, st
 @router.get("/concept-edges")
 async def list_concept_edges(
     session: AsyncSession = Depends(get_session),
-    node_id: int | None = Query(default=None, description="filter to edges touching this node (src or dst)"),
+    node_id: int | None = Query(
+        default=None, description="filter to edges touching this node (src or dst)"
+    ),
     kind: str | None = Query(default=None, description="'similarity' | 'manual'"),
     limit: int = Query(default=100, ge=1, le=500),
 ) -> list[dict[str, Any]]:
@@ -136,7 +138,9 @@ async def list_notion_pages(
     `notion_pages` rows only — ⊥ a read-back of Notion content. One page per
     node (V-N2). `title` is the outline node's name (we keep no local Notion
     content copy)."""
-    stmt = select(NotionPage).order_by(NotionPage.last_synced_at.desc().nullslast(), NotionPage.id.desc())
+    stmt = select(NotionPage).order_by(
+        NotionPage.last_synced_at.desc().nullslast(), NotionPage.id.desc()
+    )
     if node_id is not None:
         stmt = stmt.where(NotionPage.node_id == node_id)
     pages = (await session.execute(stmt)).scalars().all()

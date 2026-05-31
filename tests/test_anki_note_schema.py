@@ -118,7 +118,9 @@ async def test_anki_card_note_fk_rejects_orphan(db_session: AsyncSession) -> Non
 async def test_anki_note_tag_fk_rejects_orphan(db_session: AsyncSession) -> None:
     """anki_note_tags.note_id must reference an existing note."""
     db_session.add(
-        AnkiNoteTag(note_id=9_999_999_999_998, tag_raw="x", parsed_kind="unparsed", source="schema_map")
+        AnkiNoteTag(
+            note_id=9_999_999_999_998, tag_raw="x", parsed_kind="unparsed", source="schema_map"
+        )
     )
     with pytest.raises(IntegrityError):
         await db_session.flush()
@@ -128,11 +130,15 @@ async def test_anki_note_tag_unique_per_note_tag_raw(db_session: AsyncSession) -
     """§V75 UNIQUE(note_id, tag_raw): the collapse target rejects dup rows."""
     note = await _make_note(db_session, 5_000_000_000_004)
     db_session.add(
-        AnkiNoteTag(note_id=note.note_id, tag_raw="dup", parsed_kind="unparsed", source="schema_map")
+        AnkiNoteTag(
+            note_id=note.note_id, tag_raw="dup", parsed_kind="unparsed", source="schema_map"
+        )
     )
     await db_session.flush()
     db_session.add(
-        AnkiNoteTag(note_id=note.note_id, tag_raw="dup", parsed_kind="unparsed", source="schema_map")
+        AnkiNoteTag(
+            note_id=note.note_id, tag_raw="dup", parsed_kind="unparsed", source="schema_map"
+        )
     )
     with pytest.raises(IntegrityError):
         await db_session.flush()
@@ -192,7 +198,9 @@ async def test_anki_note_relationships_load(db_session: AsyncSession) -> None:
     note = await _make_note(db_session, 5_000_000_000_007)
     card = await _make_card(db_session, 8001, note.note_id)
     db_session.add(
-        AnkiNoteTag(note_id=note.note_id, tag_raw="t::x", parsed_kind="unparsed", source="schema_map")
+        AnkiNoteTag(
+            note_id=note.note_id, tag_raw="t::x", parsed_kind="unparsed", source="schema_map"
+        )
     )
     await db_session.flush()
     await db_session.refresh(note, attribute_names=["cards", "tags"])

@@ -122,9 +122,7 @@ def test_validate_rejects_depth_disagrees_with_path():
 
 def test_aamc_seed_validates():
     """V-O3: the bundled AAMC seed must round-trip through the validator."""
-    payload = json.loads(
-        Path("app/seeds/aamc_outline.schema.json").read_text()
-    )
+    payload = json.loads(Path("app/seeds/aamc_outline.schema.json").read_text())
     validated = validate_outline_schema(payload)
     assert validated.course.slug == "aamc"
     # Spot-check: AAMC has 4 top-level sections.

@@ -35,12 +35,8 @@ def upgrade() -> None:
         sa.Column("confidence", sa.Numeric(precision=3, scale=2), nullable=True),
         sa.Column("rationale", sa.Text(), nullable=True),
         sa.Column("extractor_version", sa.Text(), nullable=True),
-        sa.Column(
-            "manual_review", sa.Boolean(), server_default="false", nullable=False
-        ),
-        sa.Column(
-            "is_overridden", sa.Boolean(), server_default="false", nullable=False
-        ),
+        sa.Column("manual_review", sa.Boolean(), server_default="false", nullable=False),
+        sa.Column("is_overridden", sa.Boolean(), server_default="false", nullable=False),
         sa.Column("overridden_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column(
             "created_at",
@@ -67,12 +63,8 @@ def upgrade() -> None:
             "source IN ('schema_map', 'llm', 'manual')",
             name="ck_atomic_fact_tags_source",
         ),
-        sa.ForeignKeyConstraint(
-            ["atomic_fact_id"], ["atomic_facts.id"], ondelete="CASCADE"
-        ),
-        sa.ForeignKeyConstraint(
-            ["node_id"], ["outline_nodes.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["atomic_fact_id"], ["atomic_facts.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["node_id"], ["outline_nodes.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
             "atomic_fact_id", "node_id", "source", name="uq_atomic_fact_tags_node_source"
@@ -84,14 +76,10 @@ def upgrade() -> None:
         ["atomic_fact_id"],
         unique=False,
     )
-    op.create_index(
-        "ix_atomic_fact_tags_node_id", "atomic_fact_tags", ["node_id"], unique=False
-    )
+    op.create_index("ix_atomic_fact_tags_node_id", "atomic_fact_tags", ["node_id"], unique=False)
 
 
 def downgrade() -> None:
     op.drop_index("ix_atomic_fact_tags_node_id", table_name="atomic_fact_tags")
-    op.drop_index(
-        "ix_atomic_fact_tags_atomic_fact_id", table_name="atomic_fact_tags"
-    )
+    op.drop_index("ix_atomic_fact_tags_atomic_fact_id", table_name="atomic_fact_tags")
     op.drop_table("atomic_fact_tags")

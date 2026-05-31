@@ -107,9 +107,7 @@ async def test_node_id_persisted(client: AsyncClient, db_session: AsyncSession):
 # --------------------------------------------------------------------------- #
 
 
-async def test_dedupe_same_factor_is_idempotent(
-    client: AsyncClient, db_session: AsyncSession
-):
+async def test_dedupe_same_factor_is_idempotent(client: AsyncClient, db_session: AsyncSession):
     """V-M3: re-writing the same (question, factor) returns the same row,
     ⊥ a duplicate."""
     q = await _make_question(db_session)
@@ -124,9 +122,7 @@ async def test_dedupe_same_factor_is_idempotent(
     assert await _count(db_session, q.id) == 1
 
 
-async def test_distinct_factors_all_preserved(
-    client: AsyncClient, db_session: AsyncSession
-):
+async def test_distinct_factors_all_preserved(client: AsyncClient, db_session: AsyncSession):
     """V-M3: distinct factors on one question are all kept (links preserved)."""
     q = await _make_question(db_session)
     for txt in ("factor a", "factor b", "factor c"):
@@ -139,9 +135,7 @@ async def test_distinct_factors_all_preserved(
     assert await _count(db_session, q.id) == 3
 
 
-async def test_factor_text_trimmed_before_dedupe(
-    client: AsyncClient, db_session: AsyncSession
-):
+async def test_factor_text_trimmed_before_dedupe(client: AsyncClient, db_session: AsyncSession):
     q = await _make_question(db_session)
     a = await client.post(
         "/api/v1/pkm/discriminators",
@@ -191,9 +185,7 @@ async def test_blank_factor_422(client: AsyncClient, db_session: AsyncSession):
     assert r.status_code == 422
 
 
-async def test_whitespace_only_factor_422(
-    client: AsyncClient, db_session: AsyncSession
-):
+async def test_whitespace_only_factor_422(client: AsyncClient, db_session: AsyncSession):
     q = await _make_question(db_session)
     r = await client.post(
         "/api/v1/pkm/discriminators",

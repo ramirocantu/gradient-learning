@@ -35,7 +35,9 @@ async def _add_question(db: AsyncSession, qid: str) -> Question:
     return q
 
 
-def _attempt(question_id: int, *, choice: str, correct: bool, minute: int, secs: int | None) -> Attempt:
+def _attempt(
+    question_id: int, *, choice: str, correct: bool, minute: int, secs: int | None
+) -> Attempt:
     return Attempt(
         question_id=question_id,
         source="uworld",

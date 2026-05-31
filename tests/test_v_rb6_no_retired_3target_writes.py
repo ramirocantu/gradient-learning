@@ -57,7 +57,9 @@ def _retired_hits(rel_path: str) -> list[str]:
 )
 def test_v_rb6_admin_manual_tag_is_node_id_only() -> None:
     hits = _retired_hits("app/api/v1/admin.py")
-    assert not hits, "retired 3-target tokens in admin manual-tag write path (B6, V-RB6):\n" + "\n".join(hits)
+    assert not hits, (
+        "retired 3-target tokens in admin manual-tag write path (B6, V-RB6):\n" + "\n".join(hits)
+    )
 
 
 @pytest.mark.xfail(
@@ -66,4 +68,6 @@ def test_v_rb6_admin_manual_tag_is_node_id_only() -> None:
 )
 def test_v_rb6_anki_assignment_is_node_id_only() -> None:
     hits = _retired_hits("app/services/anki/assignment.py")
-    assert not hits, "retired 3-target tokens in anki assignment candidate SQL (B7, V-RB6):\n" + "\n".join(hits)
+    assert not hits, (
+        "retired 3-target tokens in anki assignment candidate SQL (B7, V-RB6):\n" + "\n".join(hits)
+    )

@@ -71,22 +71,18 @@ async def derive_similarity_edges(
     edge over the same pair coexist.
     """
 
-    embeddings_q = select(ContentEmbedding).where(
-        ContentEmbedding.entity_kind == "outline_node"
-    )
+    embeddings_q = select(ContentEmbedding).where(ContentEmbedding.entity_kind == "outline_node")
     if embedding_version is not None:
-        embeddings_q = embeddings_q.where(
-            ContentEmbedding.embedding_version == embedding_version
-        )
+        embeddings_q = embeddings_q.where(ContentEmbedding.embedding_version == embedding_version)
     embeddings = (await session.execute(embeddings_q)).scalars().all()
 
     existing_pairs = {
         (e.src_node_id, e.dst_node_id)
         for e in (
-            await session.execute(
-                select(ConceptEdge).where(ConceptEdge.kind == "similarity")
-            )
-        ).scalars().all()
+            await session.execute(select(ConceptEdge).where(ConceptEdge.kind == "similarity"))
+        )
+        .scalars()
+        .all()
     }
 
     inspected = 0

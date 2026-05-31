@@ -90,8 +90,8 @@ def _emb(node_id: int, vec: list[float], version: str = "v1") -> ContentEmbeddin
 async def test_derive_writes_above_threshold(db_session: AsyncSession):
     nodes = await _make_course_with_nodes(db_session, 3)
     db_session.add(_emb(nodes[0].id, [1.0, 0.0, 0.0]))
-    db_session.add(_emb(nodes[1].id, [0.99, 0.1, 0.0]))   # ~0.995 cosine vs node 0
-    db_session.add(_emb(nodes[2].id, [0.0, 1.0, 0.0]))     # orthogonal
+    db_session.add(_emb(nodes[1].id, [0.99, 0.1, 0.0]))  # ~0.995 cosine vs node 0
+    db_session.add(_emb(nodes[2].id, [0.0, 1.0, 0.0]))  # orthogonal
     await db_session.flush()
 
     report = await derive_similarity_edges(db_session, threshold=0.7)
@@ -101,10 +101,10 @@ async def test_derive_writes_above_threshold(db_session: AsyncSession):
     assert report.reused_edges == 0
 
     edges = (
-        await db_session.execute(
-            select(ConceptEdge).where(ConceptEdge.kind == "similarity")
-        )
-    ).scalars().all()
+        (await db_session.execute(select(ConceptEdge).where(ConceptEdge.kind == "similarity")))
+        .scalars()
+        .all()
+    )
     assert len(edges) == 1
     e = edges[0]
     assert float(e.score) > 0.95
@@ -125,10 +125,10 @@ async def test_derive_idempotent(db_session: AsyncSession):
     assert r2.reused_edges == 1
 
     edges = (
-        await db_session.execute(
-            select(ConceptEdge).where(ConceptEdge.kind == "similarity")
-        )
-    ).scalars().all()
+        (await db_session.execute(select(ConceptEdge).where(ConceptEdge.kind == "similarity")))
+        .scalars()
+        .all()
+    )
     assert len(edges) == 1
 
 
@@ -143,9 +143,7 @@ async def test_derive_skips_manual_edges(db_session: AsyncSession):
     nodes = await _make_course_with_nodes(db_session, 2)
     n0_id, n1_id = nodes[0].id, nodes[1].id
     src, dst = (n0_id, n1_id) if n0_id < n1_id else (n1_id, n0_id)
-    db_session.add(
-        ConceptEdge(src_node_id=src, dst_node_id=dst, kind="manual", score=None)
-    )
+    db_session.add(ConceptEdge(src_node_id=src, dst_node_id=dst, kind="manual", score=None))
     db_session.add(_emb(n0_id, [1.0, 0.0]))
     db_session.add(_emb(n1_id, [0.99, 0.0]))
     await db_session.flush()
@@ -153,12 +151,16 @@ async def test_derive_skips_manual_edges(db_session: AsyncSession):
     await derive_similarity_edges(db_session, threshold=0.5)
 
     edges = (
-        await db_session.execute(
-            select(ConceptEdge).where(
-                ConceptEdge.src_node_id == src, ConceptEdge.dst_node_id == dst
+        (
+            await db_session.execute(
+                select(ConceptEdge).where(
+                    ConceptEdge.src_node_id == src, ConceptEdge.dst_node_id == dst
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     kinds = {e.kind for e in edges}
     assert kinds == {"manual", "similarity"}
 
@@ -166,7 +168,7 @@ async def test_derive_skips_manual_edges(db_session: AsyncSession):
 async def test_derive_below_threshold_no_edge(db_session: AsyncSession):
     nodes = await _make_course_with_nodes(db_session, 2)
     db_session.add(_emb(nodes[0].id, [1.0, 0.0]))
-    db_session.add(_emb(nodes[1].id, [0.0, 1.0]))     # orthogonal → cosine 0
+    db_session.add(_emb(nodes[1].id, [0.0, 1.0]))  # orthogonal → cosine 0
     await db_session.flush()
 
     report = await derive_similarity_edges(db_session, threshold=0.5)
@@ -181,9 +183,7 @@ async def test_derive_version_filter(db_session: AsyncSession):
     db_session.add(_emb(nodes[2].id, [0.99, 0.0], version="v2"))
     await db_session.flush()
 
-    report_v2 = await derive_similarity_edges(
-        db_session, embedding_version="v2", threshold=0.5
-    )
+    report_v2 = await derive_similarity_edges(db_session, embedding_version="v2", threshold=0.5)
     # Only the v2 pair (1,2) inspected: 2C2 = 1 pair.
     assert report_v2.inspected_pairs == 1
     assert report_v2.new_edges == 1

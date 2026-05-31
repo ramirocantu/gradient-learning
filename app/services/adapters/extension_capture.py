@@ -291,9 +291,7 @@ async def _resolve_course_id(session: AsyncSession, course_slug: str | None) -> 
     return course_id
 
 
-async def normalize_capture(
-    payload: CapturePayload, session: AsyncSession
-) -> IngestResponse:
+async def normalize_capture(payload: CapturePayload, session: AsyncSession) -> IngestResponse:
     """Normalize one capture into {RawCapture, media, Passage, Question,
     Attempt}, stamping ``payload.source`` on each. Source-agnostic (§A) —
     the dispatching adapter only supplies the ``source`` key."""

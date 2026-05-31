@@ -40,7 +40,9 @@ from app.database import Base
 # _HOST_PORT already resolved at module top (before the app imports above).
 TEST_DB_URL = f"postgresql+asyncpg://gradient:gradient_secret@localhost:{_HOST_PORT}/gradient_test"
 _ADMIN_DSN = f"postgresql://gradient:gradient_secret@localhost:{_HOST_PORT}/gradient"
-_AAMC_SEED_SCHEMA = Path(__file__).resolve().parent.parent / "app" / "seeds" / "aamc_outline.schema.json"
+_AAMC_SEED_SCHEMA = (
+    Path(__file__).resolve().parent.parent / "app" / "seeds" / "aamc_outline.schema.json"
+)
 
 
 @pytest.fixture(scope="session")

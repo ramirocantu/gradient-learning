@@ -100,9 +100,7 @@ async def _fact(session: AsyncSession, course_id: int, text: str) -> AtomicFact:
     return f
 
 
-async def _question(
-    session: AsyncSession, stem: str, course_id: int | None = None
-) -> Question:
+async def _question(session: AsyncSession, stem: str, course_id: int | None = None) -> Question:
     q = Question(
         source="manual",
         qid=f"q-{uuid.uuid4().hex[:10]}",
@@ -178,7 +176,7 @@ async def test_embed_pending_embeds_outline_node_by_full_path(db_session: AsyncS
 
     inputs = [c.kwargs["input"] for c in client.embeddings.create.call_args_list]
     assert "Metabolism >> Glycolysis" in inputs  # child embedded by full path
-    assert "Metabolism" in inputs                # root = its own name
+    assert "Metabolism" in inputs  # root = its own name
 
 
 async def test_embed_pending_idempotent(db_session: AsyncSession):
@@ -228,10 +226,14 @@ async def test_tag_pending_tags_fact_and_sets_node_id(db_session: AsyncSession):
     ).scalar_one()
     assert refreshed.node_id == node.id
     tags = (
-        await db_session.execute(
-            select(AtomicFactTag).where(AtomicFactTag.atomic_fact_id == fact.id)
+        (
+            await db_session.execute(
+                select(AtomicFactTag).where(AtomicFactTag.atomic_fact_id == fact.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(tags) == 1
     assert tags[0].source == "llm"
 
@@ -264,13 +266,13 @@ async def test_tag_pending_tags_question_when_single_course(db_session: AsyncSes
         report = await tag_pending(db_session, tagging_client=MagicMock())
 
     assert report.questions_tagged == 1
-    refreshed = (
-        await db_session.execute(select(Question).where(Question.id == q.id))
-    ).scalar_one()
+    refreshed = (await db_session.execute(select(Question).where(Question.id == q.id))).scalar_one()
     assert refreshed.needs_categorization is False
     qtags = (
-        await db_session.execute(select(QuestionTag).where(QuestionTag.question_id == q.id))
-    ).scalars().all()
+        (await db_session.execute(select(QuestionTag).where(QuestionTag.question_id == q.id)))
+        .scalars()
+        .all()
+    )
     assert len(qtags) == 1
 
 
@@ -287,9 +289,7 @@ async def test_tag_pending_skips_questions_when_course_ambiguous(db_session: Asy
     assert report.questions_tagged == 0
     assert report.questions_skipped == 1
     gen.assert_not_called()
-    refreshed = (
-        await db_session.execute(select(Question).where(Question.id == q.id))
-    ).scalar_one()
+    refreshed = (await db_session.execute(select(Question).where(Question.id == q.id))).scalar_one()
     assert refreshed.needs_categorization is True  # untouched
 
 
@@ -313,9 +313,7 @@ async def test_tag_pending_tags_course_stamped_question_with_multiple_courses(
 
     assert report.questions_tagged == 1
     assert report.questions_skipped == 0
-    refreshed = (
-        await db_session.execute(select(Question).where(Question.id == q.id))
-    ).scalar_one()
+    refreshed = (await db_session.execute(select(Question).where(Question.id == q.id))).scalar_one()
     assert refreshed.needs_categorization is False
 
 

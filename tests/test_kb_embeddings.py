@@ -47,9 +47,7 @@ def _make_embed_client(vec: list[float], *, prompt_tokens: int = 5) -> MagicMock
     a CreateEmbeddingResponse-shaped object."""
 
     resp = SimpleNamespace(
-        data=[
-            SimpleNamespace(embedding=_padded(vec), index=0, object="embedding")
-        ],
+        data=[SimpleNamespace(embedding=_padded(vec), index=0, object="embedding")],
         model=settings.EMBEDDING_MODEL,
         object="list",
         usage=SimpleNamespace(prompt_tokens=prompt_tokens, total_tokens=prompt_tokens),
@@ -137,13 +135,17 @@ async def test_embed_version_bump_coexists(db_session: AsyncSession):
     )
 
     rows = (
-        await db_session.execute(
-            select(ContentEmbedding).where(
-                ContentEmbedding.entity_kind == "atomic_fact",
-                ContentEmbedding.entity_id == 7,
+        (
+            await db_session.execute(
+                select(ContentEmbedding).where(
+                    ContentEmbedding.entity_kind == "atomic_fact",
+                    ContentEmbedding.entity_id == 7,
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert {r.embedding_version for r in rows} == {"v1", "v2"}
     assert client.embeddings.create.await_count == 2
 

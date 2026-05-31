@@ -65,16 +65,10 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.ForeignKeyConstraint(["course_id"], ["courses.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(
-            ["pdf_source_id"], ["pdf_sources.id"], ondelete="CASCADE"
-        ),
-        sa.ForeignKeyConstraint(
-            ["node_id"], ["outline_nodes.id"], ondelete="SET NULL"
-        ),
+        sa.ForeignKeyConstraint(["pdf_source_id"], ["pdf_sources.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["node_id"], ["outline_nodes.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint(
-            "course_id", "content_hash", name="uq_atomic_facts_course_hash"
-        ),
+        sa.UniqueConstraint("course_id", "content_hash", name="uq_atomic_facts_course_hash"),
     )
     op.create_index("ix_atomic_facts_course_id", "atomic_facts", ["course_id"], unique=False)
     op.create_index(
@@ -136,22 +130,14 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
             nullable=False,
         ),
-        sa.CheckConstraint(
-            "kind IN ('similarity','manual')", name="ck_concept_edges_kind"
-        ),
-        sa.CheckConstraint(
-            "src_node_id <> dst_node_id", name="ck_concept_edges_no_self_edge"
-        ),
+        sa.CheckConstraint("kind IN ('similarity','manual')", name="ck_concept_edges_kind"),
+        sa.CheckConstraint("src_node_id <> dst_node_id", name="ck_concept_edges_no_self_edge"),
         sa.CheckConstraint(
             "score IS NULL OR (score BETWEEN -1.0 AND 1.0)",
             name="ck_concept_edges_score_range",
         ),
-        sa.ForeignKeyConstraint(
-            ["src_node_id"], ["outline_nodes.id"], ondelete="CASCADE"
-        ),
-        sa.ForeignKeyConstraint(
-            ["dst_node_id"], ["outline_nodes.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["src_node_id"], ["outline_nodes.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["dst_node_id"], ["outline_nodes.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
             "src_node_id", "dst_node_id", "kind", name="uq_concept_edges_src_dst_kind"
@@ -175,14 +161,10 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
             nullable=False,
         ),
-        sa.ForeignKeyConstraint(
-            ["node_id"], ["outline_nodes.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["node_id"], ["outline_nodes.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("node_id", name="uq_notion_pages_node_id"),
-        sa.UniqueConstraint(
-            "notion_page_id", name="uq_notion_pages_notion_page_id"
-        ),
+        sa.UniqueConstraint("notion_page_id", name="uq_notion_pages_notion_page_id"),
     )
     op.create_index("ix_notion_pages_node_id", "notion_pages", ["node_id"], unique=False)
 
@@ -199,12 +181,8 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
             nullable=False,
         ),
-        sa.ForeignKeyConstraint(
-            ["question_id"], ["questions.id"], ondelete="CASCADE"
-        ),
-        sa.ForeignKeyConstraint(
-            ["node_id"], ["outline_nodes.id"], ondelete="SET NULL"
-        ),
+        sa.ForeignKeyConstraint(["question_id"], ["questions.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["node_id"], ["outline_nodes.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
             "question_id",
@@ -227,12 +205,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index(
-        "ix_discriminator_factors_node_id", table_name="discriminator_factors"
-    )
-    op.drop_index(
-        "ix_discriminator_factors_question_id", table_name="discriminator_factors"
-    )
+    op.drop_index("ix_discriminator_factors_node_id", table_name="discriminator_factors")
+    op.drop_index("ix_discriminator_factors_question_id", table_name="discriminator_factors")
     op.drop_table("discriminator_factors")
 
     op.drop_index("ix_notion_pages_node_id", table_name="notion_pages")
@@ -243,12 +217,8 @@ def downgrade() -> None:
     op.drop_index("ix_concept_edges_src", table_name="concept_edges")
     op.drop_table("concept_edges")
 
-    op.drop_index(
-        "ix_content_embeddings_version", table_name="content_embeddings"
-    )
-    op.drop_index(
-        "ix_content_embeddings_entity", table_name="content_embeddings"
-    )
+    op.drop_index("ix_content_embeddings_version", table_name="content_embeddings")
+    op.drop_index("ix_content_embeddings_entity", table_name="content_embeddings")
     op.drop_table("content_embeddings")
 
     op.drop_index("ix_atomic_facts_node_id", table_name="atomic_facts")

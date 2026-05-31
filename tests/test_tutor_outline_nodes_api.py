@@ -95,18 +95,14 @@ async def test_search_nodes_substring_case_insensitive(
     assert any(r["name"] == "Amino acids" for r in rows)
 
     rows_upper = await outline_svc.search_nodes(db_session, query="AMINO")
-    assert {r["node_id"] for r in rows_upper} == {
-        r["node_id"] for r in rows
-    }
+    assert {r["node_id"] for r in rows_upper} == {r["node_id"] for r in rows}
 
 
 @pytest.mark.asyncio
 async def test_search_nodes_returns_path_kind_depth_course(
     db_session: AsyncSession, two_courses: dict[str, dict[str, int]]
 ) -> None:
-    [row] = await outline_svc.search_nodes(
-        db_session, query="Amino", course_slug="biochem"
-    )
+    [row] = await outline_svc.search_nodes(db_session, query="Amino", course_slug="biochem")
     assert row["path"] == "Proteins >> Amino acids"
     assert row["kind"] == "topic"
     assert row["depth"] == 1
@@ -123,9 +119,7 @@ async def test_search_nodes_course_filter_narrows_to_one(
     slugs = {r["course_slug"] for r in all_rows}
     assert slugs == {"biochem", "anatomy"}
 
-    one_only = await outline_svc.search_nodes(
-        db_session, query="s", course_slug="biochem"
-    )
+    one_only = await outline_svc.search_nodes(db_session, query="s", course_slug="biochem")
     assert {r["course_slug"] for r in one_only} == {"biochem"}
 
 
@@ -134,9 +128,7 @@ async def test_search_nodes_ranks_startswith_before_contains(
     db_session: AsyncSession, two_courses: dict[str, dict[str, int]]
 ) -> None:
     """V-M1 stays satisfied: ranking is deterministic + obvious, ⊥ a verdict."""
-    rows = await outline_svc.search_nodes(
-        db_session, query="bones", course_slug="anatomy"
-    )
+    rows = await outline_svc.search_nodes(db_session, query="bones", course_slug="anatomy")
     # "Bones of the hand" begins with the query → first.
     assert rows[0]["name"] == "Bones of the hand"
 
@@ -155,9 +147,7 @@ async def test_search_nodes_unknown_course_raises(
     db_session: AsyncSession, two_courses: dict[str, dict[str, int]]
 ) -> None:
     with pytest.raises(outline_svc.CourseNotFoundError):
-        await outline_svc.search_nodes(
-            db_session, query="x", course_slug="no-such-course"
-        )
+        await outline_svc.search_nodes(db_session, query="x", course_slug="no-such-course")
 
 
 @pytest.mark.asyncio
@@ -327,8 +317,6 @@ async def test_route_subtree_returns_descendants(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_route_subtree_unknown_node_returns_404(client: AsyncClient) -> None:
-    r = await client.get(
-        "/api/v1/tutor/outline/nodes/999999/subtree", headers=_AUTH
-    )
+    r = await client.get("/api/v1/tutor/outline/nodes/999999/subtree", headers=_AUTH)
     assert r.status_code == 404
     assert r.json()["detail"]["reason"] == "node_not_found"

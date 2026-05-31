@@ -83,10 +83,10 @@ class OutlineLookup:
                 f"via POST /api/v1/courses/{{id}}/outline:import (T9)"
             )
         rows = (
-            await session.execute(
-                select(OutlineNode).where(OutlineNode.course_id == course.id)
-            )
-        ).scalars().all()
+            (await session.execute(select(OutlineNode).where(OutlineNode.course_id == course.id)))
+            .scalars()
+            .all()
+        )
         if not rows:
             raise OutlineNotSeededError(
                 f"course {course_slug!r} has no outline_nodes — import a schema first"
@@ -115,8 +115,7 @@ class OutlineLookup:
         (with a warning) on missing/ambiguous segment.
         """
         parts = [
-            p.strip()
-            for p in normalize_typographic_punctuation(path).split(OUTLINE_PATH_DELIMITER)
+            p.strip() for p in normalize_typographic_punctuation(path).split(OUTLINE_PATH_DELIMITER)
         ]
         if not parts or not parts[0]:
             logger.warning("node_id_by_path: malformed path %r", path)

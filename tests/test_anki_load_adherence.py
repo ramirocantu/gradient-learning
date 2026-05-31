@@ -393,14 +393,34 @@ async def test_reviewed_series_is_dense_and_excludes_learn(
     # 2 real reviews today, 1 learn today (ignored), 1 real review 3d ago.
     db_session.add_all(
         [
-            AnkiCardReview(review_id=2_000_000_001, card_id=card.id,
-                           reviewed_at=frozen_now - timedelta(hours=1), ease=3, type="review"),
-            AnkiCardReview(review_id=2_000_000_002, card_id=card.id,
-                           reviewed_at=frozen_now - timedelta(hours=2), ease=2, type="review"),
-            AnkiCardReview(review_id=2_000_000_003, card_id=card.id,
-                           reviewed_at=frozen_now - timedelta(hours=3), ease=1, type="learn"),
-            AnkiCardReview(review_id=2_000_000_004, card_id=card.id,
-                           reviewed_at=frozen_now - timedelta(days=3, hours=1), ease=3, type="review"),
+            AnkiCardReview(
+                review_id=2_000_000_001,
+                card_id=card.id,
+                reviewed_at=frozen_now - timedelta(hours=1),
+                ease=3,
+                type="review",
+            ),
+            AnkiCardReview(
+                review_id=2_000_000_002,
+                card_id=card.id,
+                reviewed_at=frozen_now - timedelta(hours=2),
+                ease=2,
+                type="review",
+            ),
+            AnkiCardReview(
+                review_id=2_000_000_003,
+                card_id=card.id,
+                reviewed_at=frozen_now - timedelta(hours=3),
+                ease=1,
+                type="learn",
+            ),
+            AnkiCardReview(
+                review_id=2_000_000_004,
+                card_id=card.id,
+                reviewed_at=frozen_now - timedelta(days=3, hours=1),
+                ease=3,
+                type="review",
+            ),
         ]
     )
     await db_session.flush()

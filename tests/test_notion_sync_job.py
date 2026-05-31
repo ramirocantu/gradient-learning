@@ -39,8 +39,12 @@ async def _make_node(session: AsyncSession) -> OutlineNode:
     session.add(course)
     await session.flush()
     node = OutlineNode(
-        course_id=course.id, parent_id=None, kind="concept",
-        name=f"Concept {uuid.uuid4().hex[:6]}", depth=0, position=0,
+        course_id=course.id,
+        parent_id=None,
+        kind="concept",
+        name=f"Concept {uuid.uuid4().hex[:6]}",
+        depth=0,
+        position=0,
     )
     session.add(node)
     await session.flush()
@@ -48,8 +52,12 @@ async def _make_node(session: AsyncSession) -> OutlineNode:
 
 
 async def _add_facts(
-    session: AsyncSession, *, course_id: int, node_id: int | None,
-    texts: list[str], created_at: datetime | None = None,
+    session: AsyncSession,
+    *,
+    course_id: int,
+    node_id: int | None,
+    texts: list[str],
+    created_at: datetime | None = None,
 ) -> None:
     pdf = PdfSource(
         course_id=course_id, filename="x.pdf", sha256=uuid.uuid4().hex, status="ingested"
@@ -60,8 +68,12 @@ async def _add_facts(
         kw = {} if created_at is None else {"created_at": created_at}
         session.add(
             AtomicFact(
-                course_id=course_id, pdf_source_id=pdf.id, node_id=node_id,
-                text=t, content_hash=uuid.uuid4().hex, **kw,
+                course_id=course_id,
+                pdf_source_id=pdf.id,
+                node_id=node_id,
+                text=t,
+                content_hash=uuid.uuid4().hex,
+                **kw,
             )
         )
     await session.flush()
@@ -70,14 +82,14 @@ async def _add_facts(
 async def test_sync_creates_page_for_tagged_facts(db_session: AsyncSession):
     node = await _make_node(db_session)
     await _add_facts(
-        db_session, course_id=node.course_id, node_id=node.id,
+        db_session,
+        course_id=node.course_id,
+        node_id=node.id,
         texts=["Glycolysis yields pyruvate.", "Net two ATP per glucose."],
     )
     client = _forge_notion_client(page_id="pg-create")
 
-    report = await sync_pending_nodes(
-        db_session, notion_client=client, notion_wiki_db_id="db-1"
-    )
+    report = await sync_pending_nodes(db_session, notion_client=client, notion_wiki_db_id="db-1")
 
     assert report.nodes_synced == 1
     assert report.pages_created == 1
@@ -95,14 +107,14 @@ async def test_sync_ignores_untagged_facts(db_session: AsyncSession):
     node = await _make_node(db_session)
     # node_id NULL → not yet categorized → no node page to mirror onto.
     await _add_facts(
-        db_session, course_id=node.course_id, node_id=None,
+        db_session,
+        course_id=node.course_id,
+        node_id=None,
         texts=["Untagged fact floating free."],
     )
     client = _forge_notion_client()
 
-    report = await sync_pending_nodes(
-        db_session, notion_client=client, notion_wiki_db_id="db-1"
-    )
+    report = await sync_pending_nodes(db_session, notion_client=client, notion_wiki_db_id="db-1")
     assert report.nodes_synced == 0
     client.pages.create.assert_not_called()
 
@@ -110,33 +122,32 @@ async def test_sync_ignores_untagged_facts(db_session: AsyncSession):
 async def test_resync_appends_only_newer_facts(db_session: AsyncSession):
     node = await _make_node(db_session)
     await _add_facts(
-        db_session, course_id=node.course_id, node_id=node.id,
+        db_session,
+        course_id=node.course_id,
+        node_id=node.id,
         texts=["Original fact one.", "Original fact two."],
     )
     client = _forge_notion_client(page_id="pg-resync")
 
-    first = await sync_pending_nodes(
-        db_session, notion_client=client, notion_wiki_db_id="db-1"
-    )
+    first = await sync_pending_nodes(db_session, notion_client=client, notion_wiki_db_id="db-1")
     assert first.pages_created == 1
 
     # No new facts → re-sync is a no-op (existing facts' created_at predates
     # the pointer's last_synced_at).
-    again = await sync_pending_nodes(
-        db_session, notion_client=client, notion_wiki_db_id="db-1"
-    )
+    again = await sync_pending_nodes(db_session, notion_client=client, notion_wiki_db_id="db-1")
     assert again.nodes_synced == 0
     assert again.blocks_appended == 0
 
     # A genuinely newer fact (explicit future created_at) → appended, ⊥ a new page.
     future = datetime.now(timezone.utc) + timedelta(hours=1)
     await _add_facts(
-        db_session, course_id=node.course_id, node_id=node.id,
-        texts=["A freshly tagged fact."], created_at=future,
+        db_session,
+        course_id=node.course_id,
+        node_id=node.id,
+        texts=["A freshly tagged fact."],
+        created_at=future,
     )
-    third = await sync_pending_nodes(
-        db_session, notion_client=client, notion_wiki_db_id="db-1"
-    )
+    third = await sync_pending_nodes(db_session, notion_client=client, notion_wiki_db_id="db-1")
     assert third.nodes_synced == 1
     assert third.pages_created == 0
     assert third.blocks_appended == 1

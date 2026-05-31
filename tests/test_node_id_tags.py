@@ -68,9 +68,7 @@ async def _seed(eng) -> tuple[int, int, int]:
         )
         s.add(node)
         await s.flush()
-        q = Question(
-            qid="q1", stem_html="<p>q</p>", stem_plain="q", choices=[], correct_choice="A"
-        )
+        q = Question(qid="q1", stem_html="<p>q</p>", stem_plain="q", choices=[], correct_choice="A")
         s.add(q)
         note = AnkiNote(note_id=1234567890123)
         s.add(note)
@@ -92,13 +90,17 @@ async def test_question_tag_targets_node_id(engine):
     # The retired 3-target columns no longer exist on the table.
     async with AsyncSession(engine) as s:
         cols = (
-            await s.execute(
-                text(
-                    "SELECT column_name FROM information_schema.columns "
-                    "WHERE table_name = 'question_tags'"
+            (
+                await s.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name = 'question_tags'"
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
     assert "node_id" in cols
     assert {"topic_id", "content_category_id", "skill"}.isdisjoint(cols)
 
@@ -134,13 +136,15 @@ async def test_llm_rerun_preserves_manual_and_schema_map(engine):
         await s.commit()
     async with AsyncSession(engine) as s:
         rows = (
-            await s.execute(
-                text(
-                    "SELECT source FROM question_tags WHERE question_id = :q ORDER BY source"
-                ),
-                {"q": qid},
+            (
+                await s.execute(
+                    text("SELECT source FROM question_tags WHERE question_id = :q ORDER BY source"),
+                    {"q": qid},
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
     assert rows == ["manual", "schema_map"]
 
 
@@ -225,8 +229,10 @@ async def test_anki_note_tag_node_id_nullable_and_canonical(engine):
         await s.commit()
     async with AsyncSession(engine) as s:
         n = (
-            await s.execute(select(AnkiNoteTag).where(AnkiNoteTag.note_id == note_id))
-        ).scalars().all()
+            (await s.execute(select(AnkiNoteTag).where(AnkiNoteTag.note_id == note_id)))
+            .scalars()
+            .all()
+        )
     assert len(n) == 2
 
 

@@ -145,8 +145,7 @@ async def test_migration_apply_and_rollback():
                 text=True,
             )
             assert r.returncode == 0, (
-                f"alembic {' '.join(args[1:])} failed\n"
-                f"STDOUT:\n{r.stdout}\nSTDERR:\n{r.stderr}"
+                f"alembic {' '.join(args[1:])} failed\nSTDOUT:\n{r.stdout}\nSTDERR:\n{r.stderr}"
             )
     finally:
         admin = await asyncpg.connect(_ADMIN_DSN)
@@ -385,12 +384,8 @@ async def test_content_embedding_unique_per_entity_version(tx_session: AsyncSess
 async def test_content_embedding_version_coexistence(tx_session: AsyncSession):
     # V-E1: version bump lets two rows for the same (kind, id) coexist
     # briefly during a re-embed sweep — UQ is on the full triple.
-    tx_session.add(
-        ContentEmbedding(entity_kind="question", entity_id=9, embedding_version="v1")
-    )
-    tx_session.add(
-        ContentEmbedding(entity_kind="question", entity_id=9, embedding_version="v2")
-    )
+    tx_session.add(ContentEmbedding(entity_kind="question", entity_id=9, embedding_version="v1"))
+    tx_session.add(ContentEmbedding(entity_kind="question", entity_id=9, embedding_version="v2"))
     await tx_session.flush()
 
 
@@ -410,9 +405,7 @@ async def test_concept_edge_insert_round_trip(tx_session: AsyncSession):
     eid = e.id
 
     tx_session.expire_all()
-    got = (
-        await tx_session.execute(select(ConceptEdge).where(ConceptEdge.id == eid))
-    ).scalar_one()
+    got = (await tx_session.execute(select(ConceptEdge).where(ConceptEdge.id == eid))).scalar_one()
     assert got.kind == "similarity"
     assert float(got.score) == pytest.approx(0.83)
     assert got.src_node_id == a_id
@@ -476,9 +469,7 @@ async def test_notion_page_insert_round_trip(tx_session: AsyncSession):
     pid = p.id
 
     tx_session.expire_all()
-    got = (
-        await tx_session.execute(select(NotionPage).where(NotionPage.id == pid))
-    ).scalar_one()
+    got = (await tx_session.execute(select(NotionPage).where(NotionPage.id == pid))).scalar_one()
     assert got.node_id == node_id
     assert got.tags == ["biochem", "glycolysis"]
 
@@ -486,16 +477,12 @@ async def test_notion_page_insert_round_trip(tx_session: AsyncSession):
 async def test_notion_page_one_per_node(tx_session: AsyncSession):
     course = await _make_course(tx_session)
     node = await _make_node(tx_session, course)
-    tx_session.add(
-        NotionPage(node_id=node.id, notion_page_id="p1", url="u1")
-    )
+    tx_session.add(NotionPage(node_id=node.id, notion_page_id="p1", url="u1"))
     await tx_session.flush()
     await tx_session.commit()
 
     with pytest.raises(IntegrityError):
-        tx_session.add(
-            NotionPage(node_id=node.id, notion_page_id="p2", url="u2")
-        )
+        tx_session.add(NotionPage(node_id=node.id, notion_page_id="p2", url="u2"))
         await tx_session.flush()
 
 
@@ -538,9 +525,7 @@ async def test_discriminator_factor_insert_round_trip(tx_session: AsyncSession):
 
     tx_session.expire_all()
     got = (
-        await tx_session.execute(
-            select(DiscriminatorFactor).where(DiscriminatorFactor.id == dfid)
-        )
+        await tx_session.execute(select(DiscriminatorFactor).where(DiscriminatorFactor.id == dfid))
     ).scalar_one()
     assert got.question_id == q_id
     assert got.node_id == node_id
@@ -569,9 +554,7 @@ async def test_discriminator_factor_question_cascade(tx_session: AsyncSession):
     await tx_session.flush()
 
     remaining = (
-        await tx_session.execute(
-            select(DiscriminatorFactor).where(DiscriminatorFactor.id == dfid)
-        )
+        await tx_session.execute(select(DiscriminatorFactor).where(DiscriminatorFactor.id == dfid))
     ).scalar_one_or_none()
     assert remaining is None
 
@@ -632,9 +615,7 @@ async def test_atomic_fact_tag_confidence_required_for_llm(tx_session: AsyncSess
 
     with pytest.raises(IntegrityError):
         tx_session.add(
-            AtomicFactTag(
-                atomic_fact_id=fact.id, node_id=node.id, source="llm", confidence=None
-            )
+            AtomicFactTag(atomic_fact_id=fact.id, node_id=node.id, source="llm", confidence=None)
         )
         await tx_session.flush()
 
@@ -666,18 +647,14 @@ async def test_atomic_fact_tag_unique_node_source(tx_session: AsyncSession):
     node = await _make_node(tx_session, course)
     fact = await _make_fact(tx_session, course, pdf)
     tx_session.add(
-        AtomicFactTag(
-            atomic_fact_id=fact.id, node_id=node.id, source="llm", confidence=0.9
-        )
+        AtomicFactTag(atomic_fact_id=fact.id, node_id=node.id, source="llm", confidence=0.9)
     )
     await tx_session.flush()
     await tx_session.commit()
 
     with pytest.raises(IntegrityError):
         tx_session.add(
-            AtomicFactTag(
-                atomic_fact_id=fact.id, node_id=node.id, source="llm", confidence=0.8
-            )
+            AtomicFactTag(atomic_fact_id=fact.id, node_id=node.id, source="llm", confidence=0.8)
         )
         await tx_session.flush()
 
@@ -687,9 +664,7 @@ async def test_atomic_fact_tag_fact_cascade(tx_session: AsyncSession):
     pdf = await _make_pdf(tx_session, course)
     node = await _make_node(tx_session, course)
     fact = await _make_fact(tx_session, course, pdf)
-    t = AtomicFactTag(
-        atomic_fact_id=fact.id, node_id=node.id, source="manual", confidence=None
-    )
+    t = AtomicFactTag(atomic_fact_id=fact.id, node_id=node.id, source="manual", confidence=None)
     tx_session.add(t)
     await tx_session.flush()
     tid = t.id

@@ -89,10 +89,7 @@ def test_module_does_not_self_document_as_stub(module):
     """V-RB1: fenced modules ⊥ self-document as stub / partial port."""
     src = inspect.getsource(module)
     hits = [pat.pattern for pat in _STUB_PATTERNS if pat.search(src)]
-    assert not hits, (
-        f"{module.__name__} still contains stub/partial-port self-doc "
-        f"patterns: {hits}"
-    )
+    assert not hits, f"{module.__name__} still contains stub/partial-port self-doc patterns: {hits}"
 
 
 @pytest.mark.parametrize("module", _FENCED_MODULES, ids=lambda m: m.__name__)
@@ -102,9 +99,7 @@ def test_module_declares_fence(module):
     the anki queries/state/retention surfaces)."""
     src = inspect.getsource(module)
     assert "FENCED" in src, f"{module.__name__} missing FENCED marker"
-    assert ("T17" in src) or ("T18" in src), (
-        f"{module.__name__} missing T17/T18 reference"
-    )
+    assert ("T17" in src) or ("T18" in src), f"{module.__name__} missing T17/T18 reference"
 
 
 def test_api_routers_for_fenced_surfaces_unmounted():
@@ -155,9 +150,7 @@ def test_vrb2_no_legacy_sql_patterns(module):
     / `t.content_category_id` column references."""
     src = inspect.getsource(module)
     hits = [pat for pat in _FORBIDDEN_LEGACY_SQL if pat in src]
-    assert not hits, (
-        f"{module.__name__} still contains forbidden legacy-SQL patterns: {hits}"
-    )
+    assert not hits, f"{module.__name__} still contains forbidden legacy-SQL patterns: {hits}"
 
 
 def test_vrb2_anki_routes_disabled():
@@ -183,7 +176,7 @@ def test_vrb2_anki_api_module_drops_fenced_imports():
     for name in forbidden_imports:
         for match in re.finditer(re.escape(name), src):
             line_start = src.rfind("\n", 0, match.start()) + 1
-            line = src[line_start:match.start()]
+            line = src[line_start : match.start()]
             # Allow only commented-out occurrences.
             assert line.lstrip().startswith("#"), (
                 f"`{name}` referenced in active code of app.api.v1.anki — "

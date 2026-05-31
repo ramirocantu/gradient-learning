@@ -67,9 +67,7 @@ async def test_poll_ingests_per_slug(db_session: AsyncSession, tmp_path: Path):
     assert report.new_facts == 1
     assert not report.partial_failure
 
-    facts = (
-        await db_session.execute(select(AtomicFact))
-    ).scalars().all()
+    facts = (await db_session.execute(select(AtomicFact))).scalars().all()
     assert len(facts) == 1
     assert facts[0].extractor_version == "pdf-vision-v1"
     assert facts[0].node_id is None

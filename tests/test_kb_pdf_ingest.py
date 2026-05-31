@@ -69,8 +69,12 @@ def _facts_completion(*facts: str, **kw):
 
 async def test_transcribe_page_reads_text_and_tokens():
     client = make_client(
-        make_completion(content="Glycolysis converts glucose to pyruvate.",
-                        prompt_tokens=900, completion_tokens=50, cached_tokens=10)
+        make_completion(
+            content="Glycolysis converts glucose to pyruvate.",
+            prompt_tokens=900,
+            completion_tokens=50,
+            cached_tokens=10,
+        )
     )
     out = await transcribe_page(b"\x89PNG fake", client=client, model="gpt-4.1-mini")
     assert isinstance(out, PageTranscription)
@@ -120,9 +124,7 @@ async def test_extract_atomic_facts_drops_empty_and_nonstring():
 # --------------------------------------------------------------------------- #
 
 
-async def test_first_ingest_renders_transcribes_extracts(
-    db_session: AsyncSession, tmp_path: Path
-):
+async def test_first_ingest_renders_transcribes_extracts(db_session: AsyncSession, tmp_path: Path):
     course = await _make_course(db_session)
     course_id = course.id
     pdf = tmp_path / "lecture-01.pdf"
@@ -140,11 +142,14 @@ async def test_first_ingest_renders_transcribes_extracts(
         _facts_completion(
             "Glycolysis converts glucose to pyruvate.",
             "It yields net two ATP per glucose.",
-            prompt_tokens=500, completion_tokens=80, cached_tokens=10,
+            prompt_tokens=500,
+            completion_tokens=80,
+            cached_tokens=10,
         ),
         _facts_completion(
             "The TCA cycle regenerates oxaloacetate.",
-            prompt_tokens=500, completion_tokens=80,
+            prompt_tokens=500,
+            completion_tokens=80,
         ),
     )
 
@@ -176,10 +181,14 @@ async def test_first_ingest_renders_transcribes_extracts(
     assert pdf_row.filename == "lecture-01.pdf"
 
     facts = (
-        await db_session.execute(
-            select(AtomicFact).where(AtomicFact.pdf_source_id == report.pdf_source_id)
+        (
+            await db_session.execute(
+                select(AtomicFact).where(AtomicFact.pdf_source_id == report.pdf_source_id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(facts) == 3
     assert {f.page for f in facts} == {1, 2}
     # V-KB4: node_id NULL until the categorizer (T50) runs; V-KB3: version stamped.
@@ -202,15 +211,22 @@ async def test_re_ingest_same_file_is_noop(db_session: AsyncSession, tmp_path: P
 
     v1, e1 = _clients()
     r1 = await ingest_pdf(
-        db_session, course_id=course_id, path=pdf,
-        vision_client=v1, extract_client=e1, renderer=renderer,
+        db_session,
+        course_id=course_id,
+        path=pdf,
+        vision_client=v1,
+        extract_client=e1,
+        renderer=renderer,
     )
     # Second pass: a client that errors if touched proves the SHA short-circuit
     # returns before any render / API work.
     boom = client_with_error(AssertionError("re-ingest must not render or call the model"))
     r2 = await ingest_pdf(
-        db_session, course_id=course_id, path=pdf,
-        vision_client=boom, extract_client=boom,
+        db_session,
+        course_id=course_id,
+        path=pdf,
+        vision_client=boom,
+        extract_client=boom,
         renderer=_forge_renderer([RenderedPage(page=99, image_png=b"never")]),
     )
 
@@ -220,14 +236,14 @@ async def test_re_ingest_same_file_is_noop(db_session: AsyncSession, tmp_path: P
     assert r2.pdf_source_id == r1.pdf_source_id
 
     pdf_rows = (
-        await db_session.execute(select(PdfSource).where(PdfSource.course_id == course_id))
-    ).scalars().all()
+        (await db_session.execute(select(PdfSource).where(PdfSource.course_id == course_id)))
+        .scalars()
+        .all()
+    )
     assert len(pdf_rows) == 1
 
 
-async def test_content_hash_dedupes_facts_within_course(
-    db_session: AsyncSession, tmp_path: Path
-):
+async def test_content_hash_dedupes_facts_within_course(db_session: AsyncSession, tmp_path: Path):
     """V-KB1/V-KB4: a fact recurring in a second PDF of the same course maps to
     the existing row via UQ(course_id, content_hash)."""
 
@@ -242,13 +258,17 @@ async def test_content_hash_dedupes_facts_within_course(
     renderer = _forge_renderer([RenderedPage(page=1, image_png=b"png")])
 
     r1 = await ingest_pdf(
-        db_session, course_id=course_id, path=pdf_a,
+        db_session,
+        course_id=course_id,
+        path=pdf_a,
         vision_client=make_client(make_completion(content="t")),
         extract_client=make_client(_facts_completion(shared)),
         renderer=renderer,
     )
     r2 = await ingest_pdf(
-        db_session, course_id=course_id, path=pdf_b,
+        db_session,
+        course_id=course_id,
+        path=pdf_b,
         vision_client=make_client(make_completion(content="t")),
         extract_client=make_client(_facts_completion(shared)),
         renderer=renderer,
@@ -260,12 +280,16 @@ async def test_content_hash_dedupes_facts_within_course(
 
     chash = hashlib.sha256(shared.encode()).hexdigest()
     rows = (
-        await db_session.execute(
-            select(AtomicFact).where(
-                AtomicFact.course_id == course_id, AtomicFact.content_hash == chash
+        (
+            await db_session.execute(
+                select(AtomicFact).where(
+                    AtomicFact.course_id == course_id, AtomicFact.content_hash == chash
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(rows) == 1
 
 

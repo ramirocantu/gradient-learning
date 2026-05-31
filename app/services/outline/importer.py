@@ -80,7 +80,9 @@ def _isstr(x: Any) -> bool:
     return isinstance(x, str) and bool(x.strip())
 
 
-def _collect_validation_errors(payload: Any) -> tuple[list[str], CourseHeader | None, list[NodeRecord]]:
+def _collect_validation_errors(
+    payload: Any,
+) -> tuple[list[str], CourseHeader | None, list[NodeRecord]]:
     errors: list[str] = []
 
     if not isinstance(payload, dict):
@@ -241,9 +243,7 @@ async def materialize_outline(
     `OutlineImportError` on DB-side failures.
     """
     course = (
-        await session.execute(
-            select(Course).where(Course.slug == validated.course.slug)
-        )
+        await session.execute(select(Course).where(Course.slug == validated.course.slug))
     ).scalar_one_or_none()
     if course is None:
         course = Course(
@@ -257,9 +257,7 @@ async def materialize_outline(
         # Update mutable header fields and wipe descendants.
         course.name = validated.course.name
         course.description = validated.course.description
-        await session.execute(
-            delete(OutlineNode).where(OutlineNode.course_id == course.id)
-        )
+        await session.execute(delete(OutlineNode).where(OutlineNode.course_id == course.id))
         await session.flush()
 
     # Insert in depth-order so parent_id is resolvable on each new row.

@@ -52,8 +52,7 @@ def test_v_rb5_no_anthropic_imports_in_app_or_scripts():
     assert not offenders, (
         "V-RB5: anthropic imports must not appear in app/ or scripts/ "
         "post-pivot (T4). OpenAI is the single LLM provider — port the "
-        "offender to the OpenAI SDK (see app/services/llm/) or delete it.\n"
-        + "\n".join(offenders)
+        "offender to the OpenAI SDK (see app/services/llm/) or delete it.\n" + "\n".join(offenders)
     )
 
 
@@ -63,9 +62,7 @@ def test_v_rb5_anthropic_not_in_pyproject():
     # `"anthropic..."` in a dependency-list entry. We match the canonical
     # PEP 508 prefix.
     bad_lines = [
-        line
-        for line in pyproject.splitlines()
-        if re.search(r"^\s*[\"']anthropic[\"\s<>=!~]", line)
+        line for line in pyproject.splitlines() if re.search(r"^\s*[\"']anthropic[\"\s<>=!~]", line)
     ]
     assert not bad_lines, (
         "V-RB5: pyproject.toml must not depend on `anthropic` post-pivot. "

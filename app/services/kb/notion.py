@@ -47,7 +47,7 @@ class NotionMirrorError(RuntimeError):
 class SyncReport:
     notion_page_row_id: int
     notion_page_id: str
-    created_page: bool      # True on first sync, False on subsequent
+    created_page: bool  # True on first sync, False on subsequent
     appended_blocks: int
 
 
@@ -56,8 +56,8 @@ class DiscriminatorSyncReport:
     factor_id: int
     notion_page_id: str
     notion_block_id: str
-    created_page: bool      # True when the node page was created by this call
-    skipped: bool           # True when already mirrored (V-M3 idempotent no-op)
+    created_page: bool  # True when the node page was created by this call
+    skipped: bool  # True when already mirrored (V-M3 idempotent no-op)
 
 
 def _fact_blocks(facts: Iterable[AtomicFact]) -> list[dict[str, Any]]:
@@ -74,9 +74,7 @@ def _fact_blocks(facts: Iterable[AtomicFact]) -> list[dict[str, Any]]:
                 "object": "block",
                 "type": "bulleted_list_item",
                 "bulleted_list_item": {
-                    "rich_text": [
-                        {"type": "text", "text": {"content": f.text}}
-                    ],
+                    "rich_text": [{"type": "text", "text": {"content": f.text}}],
                 },
             }
         )
@@ -111,9 +109,7 @@ async def _ensure_node_page(
     """
 
     pointer = (
-        await session.execute(
-            select(NotionPage).where(NotionPage.node_id == node.id)
-        )
+        await session.execute(select(NotionPage).where(NotionPage.node_id == node.id))
     ).scalar_one_or_none()
     if pointer is not None:
         return pointer, False
@@ -121,11 +117,7 @@ async def _ensure_node_page(
     result = await notion_client.pages.create(
         parent={"database_id": notion_wiki_db_id},
         properties={
-            "Name": {
-                "title": [
-                    {"type": "text", "text": {"content": node.name}}
-                ]
-            },
+            "Name": {"title": [{"type": "text", "text": {"content": node.name}}]},
         },
         children=initial_blocks,
     )
@@ -268,17 +260,13 @@ async def mirror_discriminator_to_notion(
         )
 
     node = (
-        await session.execute(
-            select(OutlineNode).where(OutlineNode.id == factor.node_id)
-        )
+        await session.execute(select(OutlineNode).where(OutlineNode.id == factor.node_id))
     ).scalar_one_or_none()
     if node is None:
         raise NotionMirrorError(f"node id={factor.node_id} not found")
 
     question = (
-        await session.execute(
-            select(Question).where(Question.id == factor.question_id)
-        )
+        await session.execute(select(Question).where(Question.id == factor.question_id))
     ).scalar_one_or_none()
     if question is None:
         raise NotionMirrorError(f"question id={factor.question_id} not found")
@@ -308,8 +296,7 @@ async def mirror_discriminator_to_notion(
     await session.flush()
 
     _logger.info(
-        "mirror_discriminator_to_notion: factor_id=%d node_id=%d block_id=%s "
-        "created_page=%s",
+        "mirror_discriminator_to_notion: factor_id=%d node_id=%d block_id=%s created_page=%s",
         factor.id,
         node.id,
         block_id,
@@ -354,10 +341,14 @@ async def sync_pending_nodes(
     """
 
     node_ids = (
-        await session.execute(
-            select(AtomicFact.node_id).where(AtomicFact.node_id.is_not(None)).distinct()
+        (
+            await session.execute(
+                select(AtomicFact.node_id).where(AtomicFact.node_id.is_not(None)).distinct()
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     report = PendingSyncReport()
     for nid in node_ids:

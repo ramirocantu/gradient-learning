@@ -22,12 +22,16 @@ async def _build_question_payload(session: AsyncSession, q: Question) -> dict[st
     # resolution via OutlineLookup is a T14 follow-up; surface raw node_id +
     # source for now so MCP/tutor doesn't 500.
     tag_rows = (
-        await session.execute(
-            select(QuestionTag)
-            .where(QuestionTag.question_id == q.id)
-            .where(QuestionTag.is_overridden.is_(False))
+        (
+            await session.execute(
+                select(QuestionTag)
+                .where(QuestionTag.question_id == q.id)
+                .where(QuestionTag.is_overridden.is_(False))
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     tags: list[dict[str, Any]] = [
         {
@@ -48,12 +52,16 @@ async def _build_question_payload(session: AsyncSession, q: Question) -> dict[st
     # the per-choice answer distribution, and the user's most-recent pick.
     # Data-only — no verdict / heuristic (V-M1); the client/host interprets.
     attempts = (
-        await session.execute(
-            select(Attempt)
-            .where(Attempt.question_id == q.id)
-            .order_by(Attempt.attempted_at.desc(), Attempt.id.desc())
+        (
+            await session.execute(
+                select(Attempt)
+                .where(Attempt.question_id == q.id)
+                .order_by(Attempt.attempted_at.desc(), Attempt.id.desc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     answer_distribution: dict[str, int] = {}
     for a in attempts:

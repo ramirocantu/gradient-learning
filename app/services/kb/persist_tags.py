@@ -47,10 +47,10 @@ class EntityNotFoundError(LookupError):
 class PersistResult:
     entity_kind: str
     entity_id: int
-    persisted: int                 # source='llm' rows inserted
-    replaced: int                  # prior source='llm' rows deleted
-    manual_review_flagged: int     # of persisted, how many Conf<0.5
-    primary_node_id: int | None    # atomic_facts.node_id set (atomic_fact only)
+    persisted: int  # source='llm' rows inserted
+    replaced: int  # prior source='llm' rows deleted
+    manual_review_flagged: int  # of persisted, how many Conf<0.5
+    primary_node_id: int | None  # atomic_facts.node_id set (atomic_fact only)
 
 
 def _quantize_conf(value: float) -> Decimal:
@@ -155,9 +155,7 @@ async def _persist_atomic_fact(
     session: AsyncSession, *, atomic_fact_id: int, result: GroundedResult
 ) -> PersistResult:
     fact = (
-        await session.execute(
-            select(AtomicFact).where(AtomicFact.id == atomic_fact_id)
-        )
+        await session.execute(select(AtomicFact).where(AtomicFact.id == atomic_fact_id))
     ).scalar_one_or_none()
     if fact is None:
         raise EntityNotFoundError(f"atomic_fact id={atomic_fact_id} not found")
@@ -232,13 +230,9 @@ async def persist_grounded_tags(
     """
 
     if entity_kind == QUESTION:
-        out = await _persist_question(
-            session, question_id=entity_id, result=result
-        )
+        out = await _persist_question(session, question_id=entity_id, result=result)
     elif entity_kind == ATOMIC_FACT:
-        out = await _persist_atomic_fact(
-            session, atomic_fact_id=entity_id, result=result
-        )
+        out = await _persist_atomic_fact(session, atomic_fact_id=entity_id, result=result)
     else:
         raise ValueError(
             f"unknown entity_kind {entity_kind!r}; expected one of {_VALID_ENTITY_KINDS}"

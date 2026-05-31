@@ -178,7 +178,10 @@ async def _reviewed_series(
     rows = (
         await session.execute(
             select(day_col.label("d"), func.count())
-            .where(AnkiCardReview.reviewed_at >= datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc))
+            .where(
+                AnkiCardReview.reviewed_at
+                >= datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
+            )
             .where(AnkiCardReview.reviewed_at <= now)
             .where(AnkiCardReview.type != "learn")
             .group_by("d")
@@ -186,7 +189,10 @@ async def _reviewed_series(
     ).all()
     counts: dict[date, int] = {r[0]: int(r[1]) for r in rows}
     return tuple(
-        ReviewedDay(date=start_date + timedelta(days=i), reviewed=counts.get(start_date + timedelta(days=i), 0))
+        ReviewedDay(
+            date=start_date + timedelta(days=i),
+            reviewed=counts.get(start_date + timedelta(days=i), 0),
+        )
         for i in range(window_days)
     )
 

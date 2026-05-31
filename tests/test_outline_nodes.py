@@ -91,7 +91,12 @@ async def test_arbitrary_depth_tree_and_subtree_rollup(engine):
         s.add(cc)
         await s.flush()
         t1 = OutlineNode(
-            course_id=course.id, parent_id=cc.id, kind="topic", name="Amino acids", depth=3, position=0
+            course_id=course.id,
+            parent_id=cc.id,
+            kind="topic",
+            name="Amino acids",
+            depth=3,
+            position=0,
         )
         t2 = OutlineNode(
             course_id=course.id, parent_id=cc.id, kind="topic", name="Proteins", depth=3, position=1

@@ -120,11 +120,9 @@ async def compute_node_mastery(session: AsyncSession, *, node_id: int) -> dict[s
         raise NodeNotFoundError(node_id)
 
     course_nodes = list(
-        (
-            await session.execute(
-                select(OutlineNode).where(OutlineNode.course_id == node.course_id)
-            )
-        ).scalars().all()
+        (await session.execute(select(OutlineNode).where(OutlineNode.course_id == node.course_id)))
+        .scalars()
+        .all()
     )
     paths = _paths(course_nodes)
 
@@ -168,11 +166,9 @@ async def compute_course_mastery(session: AsyncSession, *, course_id: int) -> di
         raise CourseNotFoundError(course_id)
 
     course_nodes = list(
-        (
-            await session.execute(
-                select(OutlineNode).where(OutlineNode.course_id == course_id)
-            )
-        ).scalars().all()
+        (await session.execute(select(OutlineNode).where(OutlineNode.course_id == course_id)))
+        .scalars()
+        .all()
     )
     paths = _paths(course_nodes)
 

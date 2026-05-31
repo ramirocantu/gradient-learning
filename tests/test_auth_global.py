@@ -31,6 +31,16 @@ _GATED_PATHS = [
     "/media/does-not-exist.pdf",  # media (was OPEN → now gated)
 ]
 
+# POST-only routers (captures/pdf/pkm) — a GET would 405 before the router
+# dep runs, so it can't prove the gate. POST with no body still short-circuits
+# to 401 (auth resolves before body validation), so these exercise the gate
+# without a payload.
+_GATED_POST_PATHS = [
+    "/api/v1/captures",  # captures (router-level → now global)
+    "/api/v1/pdf/ingest",  # pdf (router-level → now global)
+    "/api/v1/pkm/discriminators",  # pkm (router-level → now global)
+]
+
 
 @pytest.mark.parametrize("path", _GATED_PATHS)
 async def test_route_requires_coach_token(client: AsyncClient, path: str) -> None:
@@ -47,6 +57,21 @@ async def test_route_passes_auth_with_token(client: AsyncClient, path: str) -> N
     that authentication itself no longer rejects the request.
     """
     resp = await client.get(path, headers=_AUTH)
+    assert resp.status_code != 401, f"{path} rejected a valid token"
+
+
+@pytest.mark.parametrize("path", _GATED_POST_PATHS)
+async def test_post_route_requires_coach_token(client: AsyncClient, path: str) -> None:
+    """No token on a POST-only router → 401, before body validation runs."""
+    resp = await client.post(path)
+    assert resp.status_code == 401, f"{path} should be gated, got {resp.status_code}"
+
+
+@pytest.mark.parametrize("path", _GATED_POST_PATHS)
+async def test_post_route_passes_auth_with_token(client: AsyncClient, path: str) -> None:
+    """With a valid token the auth gate is cleared — never a 401 (422 for the
+    missing body is fine; we only assert auth itself no longer rejects)."""
+    resp = await client.post(path, headers=_AUTH)
     assert resp.status_code != 401, f"{path} rejected a valid token"
 
 

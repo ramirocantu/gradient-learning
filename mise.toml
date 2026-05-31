@@ -1,8 +1,13 @@
 [tools]
-python = "3.12"
+# Python interpreter is owned by uv (reads .python-version), not mise — avoids
+# two interpreter managers fighting. mise installs uv + runs tasks/env.
 uv = "latest"
 
 [env]
+# uv owns the interpreter; this pins it to 3.12 (uv reads UV_PYTHON), so no
+# separate .python-version file is needed. requires-python in pyproject stays
+# the floor; this picks the exact line.
+UV_PYTHON = "3.12"
 COMPOSE_PROJECT_NAME = "gradient-server"
 POSTGRES_USER = "gradient"
 POSTGRES_PASSWORD = "gradient_secret"

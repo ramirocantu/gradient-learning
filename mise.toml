@@ -165,7 +165,8 @@ description = "Check whether local Postgres is accepting connections"
 run = "docker compose exec -T postgres pg_isready -U $POSTGRES_USER -d postgres"
 
 [tasks."db:wait"]
-description = "Wait for local Postgres to accept connections"
+hide = true
+description = "Wait for local Postgres to accept connections (internal: used by setup)"
 run = """
 for _ in $(seq 1 60); do
   if docker compose exec -T postgres pg_isready -U $POSTGRES_USER -d postgres; then

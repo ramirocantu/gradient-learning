@@ -41,6 +41,11 @@ include = ["app*"]
 [tool.ruff]
 line-length = 100
 
+[tool.ruff.lint.per-file-ignores]
+# conftest must set os.environ (test-config isolation, T40/V-TC1) BEFORE any
+# app.config import builds the settings singleton — imports cannot move to top.
+"tests/conftest.py" = ["E402"]
+
 [tool.pyright]
 # LSP + CLI type checker (matches Claude Code's official pyright-lsp plugin).
 # Points at uv's .venv so imports resolve. "basic" keeps an existing codebase

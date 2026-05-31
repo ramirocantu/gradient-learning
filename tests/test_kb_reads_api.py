@@ -153,7 +153,7 @@ async def test_notion_pages_pointer_index(client: AsyncClient, db_session: Async
 async def test_pdf_sources_inbox_with_facts_count(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    ids = await _seed(db_session)
+    await _seed(db_session)
     r = await client.get("/api/v1/pdf-sources", headers=_AUTH)
     assert r.status_code == 200, r.text
     body = r.json()

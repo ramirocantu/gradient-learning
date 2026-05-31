@@ -14,7 +14,7 @@ from typing import Any
 
 from openai import AsyncOpenAI
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -81,31 +81,15 @@ async def _notion_status_client() -> AsyncIterator[Any]:
 
 
 class ManualTagBody(BaseModel):
-    topic_id: int | None = None
-    content_category_id: int | None = None
-    skill: int | None = None
-
-    @model_validator(mode="after")
-    def _exactly_one(self) -> "ManualTagBody":
-        provided = [
-            v for v in (self.topic_id, self.content_category_id, self.skill) if v is not None
-        ]
-        if len(provided) != 1:
-            raise ValueError(
-                "exactly one of topic_id, content_category_id, skill must be provided"
-                f" (got {len(provided)})"
-            )
-        return self
+    node_id: int
 
 
 def _tag_row_payload(row: QuestionTag) -> dict[str, Any]:
     return {
         "tag_id": row.id,
         "question_id": row.question_id,
-        "topic_id": row.topic_id,
-        "content_category_id": row.content_category_id,
-        "skill": row.skill,
-        "confidence": float(row.confidence),
+        "node_id": row.node_id,
+        "confidence": float(row.confidence) if row.confidence is not None else None,
         "source": row.source,
         "rationale": row.rationale,
         "extractor_version": row.extractor_version,
@@ -125,9 +109,7 @@ async def create_manual_tag(
         row = await _create_manual_tag_service(
             session,
             question_id,
-            topic_id=body.topic_id,
-            content_category_id=body.content_category_id,
-            skill=body.skill,
+            node_id=body.node_id,
         )
     except ManualTagQuestionNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

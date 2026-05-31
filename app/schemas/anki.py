@@ -13,7 +13,6 @@ class AnkiCardTagOut(BaseModel):
 
     tag_raw: str
     parsed_kind: str
-    topic_id: Optional[int] = None
     question_qid: Optional[str] = None
 
 

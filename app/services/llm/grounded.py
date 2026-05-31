@@ -209,7 +209,7 @@ def _parse_picks(
             continue
         idx_raw = raw.get("node_index")
         try:
-            idx = int(idx_raw)
+            idx = int(idx_raw)  # type: ignore[arg-type]  — TypeError caught below
         except (TypeError, ValueError):
             warnings.append(f"pick #{i}: node_index not an int ({idx_raw!r})")
             continue
@@ -265,7 +265,7 @@ async def generate_grounded_tags(
 
     resolved_tagging_model = tagging_model or settings.OPENAI_MODEL
     resolved_calibrator_model = calibrator_model or settings.OPENAI_CALIBRATOR_MODEL
-    calibrator_client = calibrator_client or tagging_client
+    resolved_calibrator_client: Any = calibrator_client or tagging_client
     service_tier = settings.OPENAI_SERVICE_TIER  # V-L5 Flex (None omits)
 
     # V-L3: nothing to pick from → don't call the model. An empty enum would
@@ -328,7 +328,7 @@ async def generate_grounded_tags(
         calibration = await calibrate_tag(
             question_text=entity_text,
             tag_label=tag_label,
-            openai_client=calibrator_client,
+            openai_client=resolved_calibrator_client,
             model=resolved_calibrator_model,
             service_tier=service_tier,
         )

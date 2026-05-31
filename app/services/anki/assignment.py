@@ -39,6 +39,7 @@ from app.services.anki.client import (
     AnkiUnreachableError,
     AnkiWriteFailed,
 )
+from app.services.outline_subtree import subtree_node_ids
 
 logger = logging.getLogger(__name__)
 
@@ -71,24 +72,22 @@ class _Candidate:
     queue: int
     interval_days: Optional[int]
     confidence: Optional[float]
-    topic_depth: int
+    node_depth: int
 
 
-_CANDIDATE_SQL_TOPIC = text(
+# Candidate selection over the node_id subtree rollup (V-RB6, V-O5, V-O1).
+# Membership comes from `outline_subtree.subtree_node_ids` (self + descendants,
+# set rollup); this query then expands the in-scope node ids to suspended cards
+# via `anki_note_tags.node_id` (sole tag target, V-T1) and attaches each node's
+# tree depth (deeper = more specific) for the `most_specific_first` ordering.
+_CANDIDATE_SQL = text(
     """
-    WITH RECURSIVE subtree(id) AS (
-        SELECT id FROM topics WHERE id = :topic_id
+    WITH RECURSIVE node_depth(id, depth) AS (
+        SELECT id, 0 FROM outline_nodes WHERE parent_id IS NULL
         UNION ALL
-        SELECT child.id
-        FROM topics child
-        JOIN subtree s ON child.parent_topic_id = s.id
-    ),
-    topic_depth(id, depth) AS (
-        SELECT id, 0 FROM topics WHERE parent_topic_id IS NULL
-        UNION ALL
-        SELECT t.id, td.depth + 1
-        FROM topics t
-        JOIN topic_depth td ON t.parent_topic_id = td.id
+        SELECT n.id, nd.depth + 1
+        FROM outline_nodes n
+        JOIN node_depth nd ON n.parent_id = nd.id
     )
     SELECT DISTINCT
         c.anki_card_id,
@@ -96,69 +95,26 @@ _CANDIDATE_SQL_TOPIC = text(
         c.queue,
         c.interval_days,
         t.confidence,
-        COALESCE(td.depth, 0) AS depth
+        COALESCE(nd.depth, 0) AS depth
     FROM anki_cards c
     JOIN anki_note_tags t ON t.note_id = c.note_id
-    LEFT JOIN topic_depth td ON td.id = t.topic_id
+    LEFT JOIN node_depth nd ON nd.id = t.node_id
     WHERE c.queue = -1
-      AND t.parsed_kind = 'aamc_topic'
-      AND t.topic_id IN (SELECT id FROM subtree)
+      AND t.node_id = ANY(:node_ids)
       AND (t.confidence IS NULL OR t.confidence >= 0.5)
     ORDER BY c.anki_card_id, t.confidence NULLS LAST, depth
     """
 )
 
 
-_CANDIDATE_SQL_CC = text(
-    """
-    WITH RECURSIVE topic_depth(id, depth) AS (
-        SELECT id, 0 FROM topics WHERE parent_topic_id IS NULL
-        UNION ALL
-        SELECT t.id, td.depth + 1
-        FROM topics t
-        JOIN topic_depth td ON t.parent_topic_id = td.id
-    ),
-    cc(id) AS (
-        SELECT id FROM content_categories WHERE code = :cc_code
-    )
-    SELECT DISTINCT
-        c.anki_card_id,
-        c.note_id,
-        c.queue,
-        c.interval_days,
-        t.confidence,
-        COALESCE(td.depth, 0) AS depth
-    FROM anki_cards c
-    JOIN anki_note_tags t ON t.note_id = c.note_id
-    LEFT JOIN topics tp ON tp.id = t.topic_id
-    LEFT JOIN topic_depth td ON td.id = t.topic_id
-    WHERE c.queue = -1
-      AND t.parsed_kind IN ('aamc_cc', 'aamc_topic')
-      AND (
-            t.content_category_id IN (SELECT id FROM cc)
-         OR tp.content_category_id IN (SELECT id FROM cc)
-      )
-      AND (t.confidence IS NULL OR t.confidence >= 0.5)
-    ORDER BY c.anki_card_id, t.confidence NULLS LAST, depth
-    """
-)
-
-
-async def _fetch_candidates(
-    session: AsyncSession, *, scope_kind: str, scope_value: str
-) -> list[_Candidate]:
-    if scope_kind == "topic":
-        try:
-            topic_id = int(scope_value)
-        except (TypeError, ValueError) as exc:
-            raise AssignmentError(
-                f"scope_value for scope_kind='topic' must be int-coercible; got {scope_value!r}"
-            ) from exc
-        rows = (await session.execute(_CANDIDATE_SQL_TOPIC, {"topic_id": topic_id})).all()
-    elif scope_kind == "cc":
-        rows = (await session.execute(_CANDIDATE_SQL_CC, {"cc_code": scope_value})).all()
-    else:
-        raise AssignmentError(f"scope_kind must be 'cc' or 'topic'; got {scope_kind!r}")
+async def _fetch_candidates(session: AsyncSession, *, node_id: int) -> list[_Candidate]:
+    """Suspended (`queue=-1`) cards whose NOTE carries an in-scope `node_id`
+    tag (V-T1), where in-scope = the subtree rooted at `node_id` (self +
+    descendants, V-O1 set rollup via `outline_subtree`)."""
+    node_ids = await subtree_node_ids(session, node_id)
+    if not node_ids:
+        return []
+    rows = (await session.execute(_CANDIDATE_SQL, {"node_ids": list(node_ids)})).all()
 
     return [
         _Candidate(
@@ -167,7 +123,7 @@ async def _fetch_candidates(
             queue=int(r[2]),
             interval_days=(int(r[3]) if r[3] is not None else None),
             confidence=(float(r[4]) if r[4] is not None else None),
-            topic_depth=int(r[5]),
+            node_depth=int(r[5]),
         )
         for r in rows
     ]
@@ -197,7 +153,7 @@ def _apply_priority(
             key=lambda c: (
                 c.confidence is None,  # False (0) ahead of True (1) → non-NULL first
                 -(c.confidence or 0.0),
-                -c.topic_depth,
+                -c.node_depth,
                 c.anki_card_id,
             ),
         )
@@ -242,8 +198,19 @@ async def _resolve_targets(
     distinct notes among the selected cards, order-preserving — the canonical
     addTags target. Both lists are deduped (V64 belt: a cid belongs to exactly
     one note, so the card dedup already collapses cross-tag dups).
+
+    Scope is a `node_id` subtree (V-RB6 / V-O5): `scope_value` carries the
+    target outline node id (int-coercible); `scope_kind` ('cc'|'topic') is
+    retained for storage/audit only and no longer steers resolution — a node
+    is a node regardless of the AAMC `kind` label it wears (V-O1).
     """
-    candidates = await _fetch_candidates(session, scope_kind=scope_kind, scope_value=scope_value)
+    try:
+        node_id = int(scope_value)
+    except (TypeError, ValueError) as exc:
+        raise AssignmentError(
+            f"scope_value must be an int-coercible node_id; got {scope_value!r}"
+        ) from exc
+    candidates = await _fetch_candidates(session, node_id=node_id)
     ordered = _apply_priority(candidates, priority, random_seed)
     # Dedup by native card_id, order-preserving (V64): a card whose note
     # matched via multiple tags yields multiple candidate rows (the SQL

@@ -126,7 +126,7 @@ def render_pages(path: Path, *, dpi: int = _RENDER_DPI) -> list[RenderedPage]:
 
     pages: list[RenderedPage] = []
     with pymupdf.open(str(path)) as doc:
-        for i, page in enumerate(doc, start=1):
+        for i, page in enumerate(doc, start=1):  # pyright: ignore[reportArgumentType]  — pymupdf has no stubs
             pix = page.get_pixmap(dpi=dpi)
             pages.append(RenderedPage(page=i, image_png=pix.tobytes("png")))
     return pages

@@ -28,8 +28,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import pytest
-
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # Retired 3-target identifiers + the dropped tables/enums. `node_*` is excluded
@@ -51,10 +49,6 @@ def _retired_hits(rel_path: str) -> list[str]:
     ]
 
 
-@pytest.mark.xfail(
-    reason="B6: admin manual-tag write path not yet ported off the 3-target; fix = T57",
-    strict=True,
-)
 def test_v_rb6_admin_manual_tag_is_node_id_only() -> None:
     hits = _retired_hits("app/api/v1/admin.py")
     assert not hits, (
@@ -62,10 +56,6 @@ def test_v_rb6_admin_manual_tag_is_node_id_only() -> None:
     )
 
 
-@pytest.mark.xfail(
-    reason="B7: anki assignment candidate SQL not yet ported off the 3-target; fix = T57",
-    strict=True,
-)
 def test_v_rb6_anki_assignment_is_node_id_only() -> None:
     hits = _retired_hits("app/services/anki/assignment.py")
     assert not hits, (

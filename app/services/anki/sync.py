@@ -309,7 +309,7 @@ async def _sync_reviews(
         .on_conflict_do_nothing(index_elements=["review_id"])
     )
     result = await session.execute(stmt)
-    return int(result.rowcount or 0)
+    return int(getattr(result, "rowcount", 0) or 0)
 
 
 async def _upsert_card(

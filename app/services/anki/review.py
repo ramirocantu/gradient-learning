@@ -113,7 +113,7 @@ async def create_review(
             .scalars()
             .all()
         )
-        note_ids = [int(n) for n in rows]
+        note_ids = [int(n) for n in rows if n is not None]
     review = AnkiReview(
         review_date=review_date,
         card_ids=native_ids,

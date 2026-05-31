@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import (
     CheckConstraint,
@@ -16,6 +16,9 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+
+if TYPE_CHECKING:
+    from app.models.atomic_fact import AtomicFact
 
 
 class PdfSource(Base):
@@ -49,6 +52,6 @@ class PdfSource(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
-    atomic_facts: Mapped[list["AtomicFact"]] = relationship(  # noqa: F821
+    atomic_facts: Mapped[list["AtomicFact"]] = relationship(
         back_populates="pdf_source", cascade="all, delete-orphan"
     )

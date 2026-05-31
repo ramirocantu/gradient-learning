@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import (
     Boolean,
@@ -18,6 +18,9 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+
+if TYPE_CHECKING:
+    from app.models.atomic_fact import AtomicFact
 
 
 class AtomicFactTag(Base):
@@ -91,6 +94,4 @@ class AtomicFactTag(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
-    atomic_fact: Mapped["AtomicFact"] = relationship(  # noqa: F821
-        back_populates="tags"
-    )
+    atomic_fact: Mapped["AtomicFact"] = relationship(back_populates="tags")

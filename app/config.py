@@ -109,7 +109,7 @@ class Settings(BaseSettings):
     GROUNDED_TAG_INTERVAL_MINUTES: int = 20
 
 
-settings = Settings()
+settings = Settings()  # pyright: ignore[reportCallIssue]  — DATABASE_URL loaded from env
 
 
 def ensure_media_root() -> Path:

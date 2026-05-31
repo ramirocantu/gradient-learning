@@ -27,7 +27,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypeGuard
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -76,7 +76,7 @@ class ValidatedOutline:
     nodes_in_order: tuple[NodeRecord, ...]
 
 
-def _isstr(x: Any) -> bool:
+def _isstr(x: Any) -> TypeGuard[str]:
     return isinstance(x, str) and bool(x.strip())
 
 

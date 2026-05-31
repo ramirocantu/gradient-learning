@@ -49,7 +49,7 @@ class CalibrationResult:
     yes_logprob: float
     no_logprob: float
     chosen_token: str | None
-    raw_top_logprobs: list[dict[str, float]]
+    raw_top_logprobs: list[dict[str, Any]]
 
 
 def _extract_yes_no_logprobs(top_logprobs: list[Any]) -> tuple[float, float]:
@@ -130,7 +130,7 @@ async def grade_yes_no(
 
     choice = completion.choices[0] if completion.choices else None
     chosen_token: str | None = None
-    raw: list[dict[str, float]] = []
+    raw: list[dict[str, Any]] = []
     l_yes = l_no = _NEG_INF
     if choice is not None and choice.logprobs and choice.logprobs.content:
         first_token = choice.logprobs.content[0]

@@ -1,6 +1,6 @@
 [tools]
-# Python interpreter is owned by uv (reads .python-version), not mise — avoids
-# two interpreter managers fighting. mise installs uv + runs tasks/env.
+# Python interpreter is owned by uv (pinned via UV_PYTHON below), not mise —
+# avoids two interpreter managers fighting. mise installs uv + runs tasks/env.
 uv = "latest"
 
 [env]
@@ -28,6 +28,8 @@ ANKI_DECK_NAME = "AnKing MCAT Deck"
 # the existence check in worktree:db:clone never matches a truncated name).
 POSTGRES_DB = "gradient_{{ exec(command='git branch --show-current | tr A-Z a-z | tr -cs a-z0-9 _ | cut -c1-54 | sed -E \"s/_+$//\"') }}"
 DATABASE_URL = "postgresql+asyncpg://{{ env.POSTGRES_USER }}:{{ env.POSTGRES_PASSWORD }}@localhost:{{ env.HOST_POSTGRES_PORT }}/{{ env.POSTGRES_DB }}"
+
+# ── Core dev ────────────────────────────────────────────────────────────────
 
 [tasks.install]
 description = "Install Python dependencies"
@@ -59,16 +61,41 @@ run = "uv run pytest"
 description = "Run Ruff lint checks"
 run = "uv run ruff check ."
 
+[tasks.format]
+description = "Format with Ruff"
+run = "uv run ruff format ."
+
+[tasks.typecheck]
+description = "Static type check (basedpyright)"
+run = "uv run basedpyright"
+
 [tasks.check]
-description = "Run lint and tests"
+description = "Run lint, type check, and tests"
 run = [
   { task = "lint" },
+  { task = "typecheck" },
   { task = "test" },
 ]
+
+# ── Language servers ──────────────────────────────────────────────────────────
+# Canonical LSP launch commands — point your editor / coding agent at these
+# (stdio servers). Versions come from uv.lock, so every agent uses the same.
+
+[tasks."lsp:type"]
+description = "basedpyright language server (stdio)"
+run = "uv run basedpyright-langserver --stdio"
+
+[tasks."lsp:ruff"]
+description = "Ruff language server (stdio)"
+run = "uv run ruff server"
+
+# ── Git hooks ─────────────────────────────────────────────────────────────────
 
 [tasks."hooks:install"]
 description = "Enable committed git hooks (.githooks) — auto-provisions DB on worktree creation"
 run = "git config core.hooksPath .githooks"
+
+# ── Worktree provisioning ─────────────────────────────────────────────────────
 
 [tasks."worktree:setup"]
 description = "Clone the gradient template into this branch's database and migrate it"
@@ -109,6 +136,46 @@ docker compose exec -T postgres pg_dump -U "$POSTGRES_USER" --clean --if-exists 
 echo "Cloned $SOURCE_DB -> $POSTGRES_DB."
 """
 
+# ── Database ──────────────────────────────────────────────────────────────────
+
+[tasks."db:up"]
+description = "Start local Postgres"
+run = "docker compose up -d postgres"
+
+[tasks."db:down"]
+description = "Stop and remove local Postgres"
+run = "docker compose down"
+
+[tasks."db:status"]
+description = "Show local Postgres container status"
+run = "docker compose ps postgres"
+
+[tasks."db:logs"]
+description = "Tail local Postgres logs"
+run = "docker compose logs -f postgres"
+
+[tasks."db:ready"]
+description = "Check whether local Postgres is accepting connections"
+# Probe the always-present `postgres` DB (server liveness), not the branch DB
+# which may not exist before worktree:setup. Matches db:wait.
+run = "docker compose exec -T postgres pg_isready -U $POSTGRES_USER -d postgres"
+
+[tasks."db:wait"]
+description = "Wait for local Postgres to accept connections"
+run = """
+for _ in $(seq 1 60); do
+  if docker compose exec -T postgres pg_isready -U $POSTGRES_USER -d postgres; then
+    exit 0
+  fi
+  sleep 1
+done
+exit 1
+"""
+
+[tasks."db:psql"]
+description = "Open psql inside the local Postgres container (this branch's database)"
+run = "docker compose exec postgres psql -U $POSTGRES_USER -d $POSTGRES_DB"
+
 [tasks."db:drop"]
 hide = true
 description = "Drop a named database (refuses protected/empty names). Usage: mise run db:drop <db>"
@@ -118,7 +185,6 @@ usage = 'arg "<db>" help="Database name to drop"'
 # db:drop-branch and db:prune delegate here so the guard + SQL live in one place.
 run = """
 db="${usage_db:-}"
-POSTGRES_USER="${POSTGRES_USER:-gradient}"
 
 case "$db" in
   ""|postgres|template0|template1|gradient)
@@ -133,6 +199,12 @@ docker compose exec -T postgres psql -U "$POSTGRES_USER" -d postgres \
   -c "DROP DATABASE IF EXISTS \\"$db\\";"
 """
 
+[tasks."db:drop-branch"]
+description = "Drop this branch's database (refuses the gradient template and protected names)"
+# Delegates to db:drop. $POSTGRES_DB is this branch's DB (mise-derived); passed
+# as an arg so db:drop's own re-derived env doesn't matter.
+run = 'mise run db:drop "$POSTGRES_DB"'
+
 [tasks."db:prune"]
 description = "Drop branch databases with no live worktree (DRY RUN; set APPLY=1 to delete)"
 # git has no worktree-removal hook, so reconcile instead: any gradient_* DB whose
@@ -140,8 +212,6 @@ description = "Drop branch databases with no live worktree (DRY RUN; set APPLY=1
 # from each live worktree's mise-derived POSTGRES_DB, so this reuses mise.toml's
 # branch->db rule (no duplicated sanitize logic). Protects gradient + gradient_test.
 run = """
-POSTGRES_USER="${POSTGRES_USER:-gradient}"
-
 keep="gradient gradient_test postgres template0 template1"
 for wt in $(git worktree list --porcelain | awk '/^worktree /{print $2}'); do
   db="$(cd "$wt" 2>/dev/null && mise env 2>/dev/null | sed -n 's/^export POSTGRES_DB=//p')"
@@ -165,45 +235,3 @@ done
 [ "${APPLY:-0}" != "1" ] && echo "Re-run with APPLY=1 to delete."
 exit 0
 """
-
-[tasks."db:up"]
-description = "Start local Postgres"
-run = "docker compose up -d postgres"
-
-[tasks."db:down"]
-description = "Stop and remove local Postgres"
-run = "docker compose down"
-
-[tasks."db:status"]
-description = "Show local Postgres container status"
-run = "docker compose ps postgres"
-
-[tasks."db:logs"]
-description = "Tail local Postgres logs"
-run = "docker compose logs -f postgres"
-
-[tasks."db:ready"]
-description = "Check whether local Postgres is accepting connections"
-run = "docker compose exec -T postgres pg_isready -U ${POSTGRES_USER:-gradient} -d ${POSTGRES_DB:-gradient}"
-
-[tasks."db:wait"]
-description = "Wait for local Postgres to accept connections"
-run = """
-for _ in $(seq 1 60); do
-  if docker compose exec -T postgres pg_isready -U ${POSTGRES_USER:-gradient} -d postgres; then
-    exit 0
-  fi
-  sleep 1
-done
-exit 1
-"""
-
-[tasks."db:psql"]
-description = "Open psql inside the local Postgres container (this branch's database)"
-run = "docker compose exec postgres psql -U ${POSTGRES_USER:-gradient} -d ${POSTGRES_DB:-gradient}"
-
-[tasks."db:drop-branch"]
-description = "Drop this branch's database (refuses the gradient template and protected names)"
-# Delegates to db:drop. $POSTGRES_DB is this branch's DB (mise-derived); passed
-# as an arg so db:drop's own re-derived env doesn't matter.
-run = 'mise run db:drop "$POSTGRES_DB"'

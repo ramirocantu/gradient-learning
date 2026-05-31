@@ -58,6 +58,10 @@ POST /api/v1/captures                      CapturePayload{source=uworld,...} →
                                            question_id + NEW attempt_id (⊥ (source,external_id))
                                            course_slug→course_id; ABSENT slug→fallback (NULL course_id),
                                            UNKNOWN slug→422 (UnknownCourseError) — not the same path
+                                           real wire (ext 0.4.0, verified T2): uworld_aamc_tags = 6-level
+                                           hierarchy strings ("Chapter:|Lesson:|Skill:|SubSkill:|Subject:|Unit:"),
+                                           ⊥ flat names; media[] → `media` rows + bytes on disk (hash-sharded);
+                                           attempt carries time_seconds + flagged; clean parse → parse_warnings NULL
 GET  /api/v1/attempts/{attempt_id}/notes   observe attempt persisted
 
 # PDF → Grounded Tag (full LLM4Tag arc)
@@ -116,7 +120,7 @@ Per workflow: manual pass (find/backprop) precedes its E2E test. `st`: `.` todo 
 | id | st | goal | cites |
 |-----|----|------|-------|
 | T1 | x | fixtures: craft uworld `CapturePayload` sample + reusable `conftest` helpers (auth header, course seed, 4-site OpenAI mock wiring, fake `renderer` returning stub page-images). ⊥ committed PDF — E2E uses fake renderer + synthetic bytes; manual T4 supplies its own local PDF | V2,V3,I |
-| T2 | x | manual pass — Capture→Attempt: `mise run dev`; POST a uworld capture (with + without course_slug); verify Question+Attempt+tags rows; log breakage to §B | V4,V6,I |
+| T2 | x | manual pass — Capture→Attempt (synthetic curl + real chrome-extension capture, qid 404824): `mise run dev`; POST a uworld capture (with + without course_slug); verify Question+Attempt+tags rows; log breakage to §B | V4,V6,I |
 | T3 | . | E2E pytest — Capture→Attempt: POST capture → assert IngestResponse + persisted Question/Attempt/tags via read surface; cover course-bound + fallback paths | V1,V3,V6,I |
 | T4 | . | manual pass — PDF→Grounded Tag (full arc): POST `/pdf/ingest` (real course+PDF, real OpenAI) → run `embed_pending` → run `tag_pending` (or scheduler `_do_run_grounded_tag`); verify pdf_sources status, atomic_facts, content_embeddings, recall candidates, persisted atomic_fact_tags(node_id, source='llm', confidence); log breakage to §B | V4,V7,V8,I |
 | T5 | . | E2E pytest — PDF→Grounded Tag (full arc): mock all four OpenAI sites (vision/extract/embed/tagging+calibrator); seed+import outline; POST ingest → assert PdfIngestResponse + `/pdf-sources` + `/atomic-facts`; in-process `embed_pending`→`tag_pending`; assert persisted tag (V7) + empty-recall no-tag path | V1,V2,V3,V7,V8,I |

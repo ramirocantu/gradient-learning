@@ -12,8 +12,10 @@ _PriorityKind = Literal["most_specific_first", "random", "mature_first", "young_
 
 
 class AnkiAssignmentCreateIn(BaseModel):
-    """V52 create-assignment payload. `scope_value` is a topic_id (as str)
-    or a CC code, matched by `scope_kind`."""
+    """V52 create-assignment payload. `scope_value` is an outline `node_id`
+    (as str); candidates resolve over its subtree (T57, V-O1). `scope_kind`
+    ('cc'|'topic') is retained for storage/audit and no longer steers
+    resolution — a node is a node regardless of its AAMC `kind` label."""
 
     scope_kind: Literal["cc", "topic"]
     scope_value: str = Field(min_length=1, max_length=64)

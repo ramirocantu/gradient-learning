@@ -1,0 +1,20 @@
+# Copy to mise.local.toml and keep it uncommitted.
+#
+# For local plaintext secrets:
+#   1. Create .env.secrets.json with keys like OPENAI_API_KEY, COACH_TOKEN,
+#      NOTION_API_TOKEN, and NOTION_WIKI_DB_ID.
+#   2. Leave .env.secrets.json uncommitted.
+#
+# For encrypted secrets:
+#   1. Encrypt .env.secrets.json with sops + age.
+#   2. Configure MISE_SOPS_AGE_KEY_FILE or SOPS_AGE_KEY_FILE.
+#   3. Keep this same mise config shape; mise decrypts the file at activation.
+
+[env]
+_.file = { path = ".env.secrets.json", redact = true }
+
+# Override connection parts here when needed; DATABASE_URL is derived in mise.toml.
+# POSTGRES_USER = "gradient"
+# POSTGRES_PASSWORD = "gradient_secret"
+# HOST_POSTGRES_PORT = "5432"
+# POSTGRES_DB = "gradient"

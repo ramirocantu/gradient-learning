@@ -1,0 +1,242 @@
+[tools]
+# Python interpreter is owned by uv (pinned via UV_PYTHON below), not mise —
+# avoids two interpreter managers fighting. mise installs uv + runs tasks/env.
+uv = "latest"
+
+[env]
+# uv owns the interpreter; this pins it to 3.12 (uv reads UV_PYTHON), so no
+# separate .python-version file is needed. requires-python in pyproject stays
+# the floor; this picks the exact line.
+UV_PYTHON = "3.12"
+
+# Put uv's venv bin on PATH so project tools (pyright-langserver, ruff, etc.)
+# are runnable as bare binaries — required by Claude Code's official pyright-lsp
+# plugin, which launches `pyright-langserver` from PATH (can't use `uv run`).
+_.path = [".venv/bin"]
+
+COMPOSE_PROJECT_NAME = "gradient-server"
+POSTGRES_USER = "gradient"
+POSTGRES_PASSWORD = "gradient_secret"
+HOST_POSTGRES_PORT = "5432"
+
+# Non-secret app config that differs from app/config.py defaults. Everything
+# else the app needs falls back to those field defaults; secrets come from
+# ~/.config/gradient/secrets.json via mise.local.toml.
+ANKI_DECK_NAME = "AnKing MCAT Deck"
+
+# Per-branch Postgres database, derived ONCE from the current git branch
+# (uniform: main -> gradient_main, feature/x-1 -> gradient_feature_x_1). This
+# makes DATABASE_URL branch-correct in EVERY process (dev, migrate, psql) with
+# no .env rewriting and no precedence shadowing. `gradient` (unsuffixed) is the
+# pristine template that worktree:setup clones from.
+# cut -c1-54 keeps "gradient_" + suffix within Postgres's 63-byte identifier
+# limit, so POSTGRES_DB matches the name the server actually stores (otherwise
+# the existence check in worktree:db:clone never matches a truncated name).
+POSTGRES_DB = "gradient_{{ exec(command='git branch --show-current | tr A-Z a-z | tr -cs a-z0-9 _ | cut -c1-54 | sed -E \"s/_+$//\"') }}"
+DATABASE_URL = "postgresql+asyncpg://{{ env.POSTGRES_USER }}:{{ env.POSTGRES_PASSWORD }}@localhost:{{ env.HOST_POSTGRES_PORT }}/{{ env.POSTGRES_DB }}"
+
+# ── Core dev ────────────────────────────────────────────────────────────────
+
+[tasks.install]
+description = "Install Python dependencies"
+run = "uv sync --dev"
+
+[tasks.setup]
+description = "Install dependencies, start Postgres, and run migrations"
+run = [
+  { task = "install" },
+  { task = "db:up" },
+  { task = "db:wait" },
+  { task = "migrate" },
+]
+
+[tasks.migrate]
+description = "Run database migrations against this branch's database"
+run = "uv run alembic upgrade head"
+
+[tasks.dev]
+description = "Run the FastAPI development server"
+depends = ["db:up"]
+run = "uv run uvicorn app.main:app --reload"
+
+[tasks.test]
+description = "Run the test suite"
+run = "uv run pytest"
+
+[tasks.lint]
+description = "Run Ruff lint checks"
+run = "uv run ruff check ."
+
+[tasks.format]
+description = "Format with Ruff"
+run = "uv run ruff format ."
+
+[tasks.typecheck]
+description = "Static type check (pyright)"
+run = "uv run pyright"
+
+[tasks.check]
+description = "Run lint, type check, and tests"
+run = [
+  { task = "lint" },
+  { task = "typecheck" },
+  { task = "test" },
+]
+
+# ── Language servers ──────────────────────────────────────────────────────────
+# Python type LSP (pyright-langserver) is launched by Claude Code's official
+# pyright-lsp plugin, which finds it on PATH via [env] _.path = [".venv/bin"].
+# ruff has no official CC plugin, so expose it as a manual launch command for
+# editors / other agents. Version comes from uv.lock — same everywhere.
+
+[tasks."lsp:ruff"]
+description = "Ruff language server (stdio)"
+run = "uv run ruff server"
+
+# ── Git hooks ─────────────────────────────────────────────────────────────────
+
+[tasks."hooks:install"]
+description = "Enable committed git hooks (.githooks) — auto-provisions DB on worktree creation"
+run = "git config core.hooksPath .githooks"
+
+# ── Worktree provisioning ─────────────────────────────────────────────────────
+
+[tasks."worktree:setup"]
+description = "Clone the gradient template into this branch's database and migrate it"
+depends = ["db:up", "db:wait"]
+run = [
+  { task = "worktree:db:clone" },
+  { task = "migrate" },
+]
+
+[tasks."worktree:db:clone"]
+hide = true
+description = "Create this branch's database as a clone of the gradient template"
+# POSTGRES_DB / POSTGRES_USER come from [env]; mise runs this inside the
+# worktree, so docker compose and git resolve to the current checkout.
+# Set RESET_BRANCH_DB=1 to drop and re-clone an existing branch database.
+run = """
+SOURCE_DB=gradient
+if [ "$POSTGRES_DB" = "$SOURCE_DB" ]; then
+  echo "On the $SOURCE_DB template; nothing to clone."
+  exit 0
+fi
+
+exists="$(docker compose exec -T postgres psql -U "$POSTGRES_USER" -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$POSTGRES_DB'")"
+if [ "$exists" = "1" ] && [ "${RESET_BRANCH_DB:-0}" != "1" ]; then
+  echo "Database $POSTGRES_DB already exists; leaving it unchanged."
+  exit 0
+fi
+
+if [ "$exists" = "1" ]; then
+  echo "Resetting existing database $POSTGRES_DB..."
+  docker compose exec -T postgres dropdb -U "$POSTGRES_USER" --force "$POSTGRES_DB"
+fi
+
+echo "Creating and cloning $SOURCE_DB -> $POSTGRES_DB..."
+docker compose exec -T postgres createdb -U "$POSTGRES_USER" -O "$POSTGRES_USER" "$POSTGRES_DB"
+docker compose exec -T postgres pg_dump -U "$POSTGRES_USER" --clean --if-exists --no-owner --no-privileges "$SOURCE_DB" \
+  | docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 >/dev/null
+echo "Cloned $SOURCE_DB -> $POSTGRES_DB."
+"""
+
+# ── Database ──────────────────────────────────────────────────────────────────
+
+[tasks."db:up"]
+description = "Start local Postgres"
+run = "docker compose up -d postgres"
+
+[tasks."db:down"]
+description = "Stop and remove local Postgres"
+run = "docker compose down"
+
+[tasks."db:status"]
+description = "Show local Postgres container status"
+run = "docker compose ps postgres"
+
+[tasks."db:logs"]
+description = "Tail local Postgres logs"
+run = "docker compose logs -f postgres"
+
+[tasks."db:ready"]
+description = "Check whether local Postgres is accepting connections"
+# Probe the always-present `postgres` DB (server liveness), not the branch DB
+# which may not exist before worktree:setup. Matches db:wait.
+run = "docker compose exec -T postgres pg_isready -U $POSTGRES_USER -d postgres"
+
+[tasks."db:wait"]
+hide = true
+description = "Wait for local Postgres to accept connections (internal: used by setup)"
+run = """
+for _ in $(seq 1 60); do
+  if docker compose exec -T postgres pg_isready -U $POSTGRES_USER -d postgres; then
+    exit 0
+  fi
+  sleep 1
+done
+exit 1
+"""
+
+[tasks."db:psql"]
+description = "Open psql inside the local Postgres container (this branch's database)"
+run = "docker compose exec postgres psql -U $POSTGRES_USER -d $POSTGRES_DB"
+
+[tasks."db:drop"]
+hide = true
+description = "Drop a named database (refuses protected/empty names). Usage: mise run db:drop <db>"
+usage = 'arg "<db>" help="Database name to drop"'
+# Single source of truth for safely dropping a database. Takes the name as a
+# positional arg (NOT via POSTGRES_DB, which mise re-derives per task). Both
+# db:drop-branch and db:prune delegate here so the guard + SQL live in one place.
+run = """
+db="${usage_db:-}"
+
+case "$db" in
+  ""|postgres|template0|template1|gradient)
+    echo "refusing to drop protected/empty database: ${db:-<empty>}" >&2
+    exit 1
+    ;;
+esac
+
+echo "Dropping database: $db"
+docker compose exec -T postgres psql -U "$POSTGRES_USER" -d postgres \
+  -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$db' AND pid <> pg_backend_pid();" \
+  -c "DROP DATABASE IF EXISTS \\"$db\\";"
+"""
+
+[tasks."db:drop-branch"]
+description = "Drop this branch's database (refuses the gradient template and protected names)"
+# Delegates to db:drop. $POSTGRES_DB is this branch's DB (mise-derived); passed
+# as an arg so db:drop's own re-derived env doesn't matter.
+run = 'mise run db:drop "$POSTGRES_DB"'
+
+[tasks."db:prune"]
+description = "Drop branch databases with no live worktree (DRY RUN; set APPLY=1 to delete)"
+# git has no worktree-removal hook, so reconcile instead: any gradient_* DB whose
+# branch no longer has a checked-out worktree is an orphan. The keep-set is built
+# from each live worktree's mise-derived POSTGRES_DB, so this reuses mise.toml's
+# branch->db rule (no duplicated sanitize logic). Protects gradient + gradient_test.
+run = """
+keep="gradient gradient_test postgres template0 template1"
+for wt in $(git worktree list --porcelain | awk '/^worktree /{print $2}'); do
+  db="$(cd "$wt" 2>/dev/null && mise env 2>/dev/null | sed -n 's/^export POSTGRES_DB=//p')"
+  [ -n "$db" ] && keep="$keep $db"
+done
+
+all="$(docker compose exec -T postgres psql -U "$POSTGRES_USER" -d postgres -tAc "SELECT datname FROM pg_database WHERE datname LIKE 'gradient\\_%'")"
+
+orphans=0
+for db in $all; do
+  case " $keep " in *" $db "*) continue ;; esac
+  orphans=$((orphans + 1))
+  if [ "${APPLY:-0}" = "1" ]; then
+    mise run db:drop "$db"
+  else
+    echo "[dry-run] would drop orphan database: $db"
+  fi
+done
+
+[ "$orphans" = "0" ] && echo "No orphan branch databases." && exit 0
+[ "${APPLY:-0}" != "1" ] && echo "Re-run with APPLY=1 to delete."
+exit 0
+"""

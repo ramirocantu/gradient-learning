@@ -35,6 +35,11 @@ dashboard/build/
 .env
 .env.local
 .env.*.local
+.env.secrets.json
+.env.secrets.yaml
+.env.secrets.toml
+mise.local.toml
+mise.*.local.toml
 
 # ── IDE / OS ──────────────────────────────────────────────────────────────────
 .DS_Store

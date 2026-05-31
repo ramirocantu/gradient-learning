@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_session, verify_coach_token
+from app.api.deps import get_session
 from app.models.anki import AnkiReview
 from app.schemas.anki_review import AnkiReviewCreateIn, AnkiReviewOut
 from app.services.anki.review import create_review
@@ -24,9 +24,7 @@ router = APIRouter(prefix="/anki", tags=["anki"])
 @router.post(
     "/reviews",
     response_model=AnkiReviewOut,
-    status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(verify_coach_token)],
-)
+    status_code=status.HTTP_201_CREATED,)
 async def create_review_route(
     payload: AnkiReviewCreateIn,
     session: AsyncSession = Depends(get_session),
@@ -41,9 +39,7 @@ async def create_review_route(
 
 @router.get(
     "/reviews",
-    response_model=list[AnkiReviewOut],
-    dependencies=[Depends(verify_coach_token)],
-)
+    response_model=list[AnkiReviewOut],)
 async def list_reviews_route(
     status_filter: str | None = Query(None, alias="status"),
     window_days: int | None = Query(None, ge=1, le=365),

@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_session, verify_coach_token
+from app.api.deps import get_session
 from app.models.outline import Course, OutlineNode
 from app.services.analytics import (
     CourseNotFoundError as MasteryCourseNotFound,
@@ -29,8 +29,8 @@ from app.services.outline import (
     validate_outline_schema,
 )
 
-# Whole router is X-Coach-Token gated (same seam as the tutor reads).
-router = APIRouter(tags=["outline"], dependencies=[Depends(verify_coach_token)])
+# X-Coach-Token gating is enforced globally at the v1 router (app/main.py).
+router = APIRouter(tags=["outline"])
 
 
 class CreateCourseBody(BaseModel):

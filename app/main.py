@@ -2,12 +2,13 @@ import json
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, FastAPI, Request
+from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api.deps import verify_coach_token
 from app.api.v1.admin import router as admin_router
 from app.api.v1.anki import router as anki_router
 from app.api.v1.anki_assign import router as anki_assign_router
@@ -32,6 +33,13 @@ async def lifespan(app: FastAPI):
     # optional values WARN-log but do not block boot — the matching
     # service raises on first use if its var is unset.
     validate_kb_config(settings)
+    # V-AUTH: token gates every /api/v1 + /media request. The default
+    # placeholder must never run outside local/test — WARN (don't block boot,
+    # tests rely on the default under GRADIENT_DISABLE_DOTENV).
+    if settings.COACH_TOKEN == "change_me_before_use":
+        logging.getLogger("app.auth").warning(
+            "COACH_TOKEN is the insecure default — set COACH_TOKEN before any non-local use"
+        )
     start_scheduler()
     yield
     stop_scheduler()
@@ -49,7 +57,10 @@ app.add_middleware(
 )
 
 
-v1 = APIRouter(prefix="/api/v1")
+# V-AUTH: auth is enforced once here for the whole /api/v1 surface — never
+# per-route. A new router added below is gated by default; forgetting a
+# per-route Depends can no longer leave a route public.
+v1 = APIRouter(prefix="/api/v1", dependencies=[Depends(verify_coach_token)])
 v1.include_router(captures_router)
 v1.include_router(pdf_router)
 v1.include_router(outline_router)
@@ -73,7 +84,7 @@ async def health_check():
 # Media — serves /media/{file_path} (PDF/image assets referenced by API
 # responses). Backend-only: there is no view layer; clients (native app,
 # Chrome extension, MCP host) consume /api/v1/* + /media/* over HTTP.
-app.include_router(media_router)
+app.include_router(media_router, dependencies=[Depends(verify_coach_token)])
 
 
 _ingest_logger = logging.getLogger("app.ingest.validation")

@@ -18,7 +18,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_session, verify_coach_token
+from app.api.deps import get_session
 from app.models.anki import AnkiLoadConfig
 from app.schemas.anki_load import (
     AnkiLoadAdherenceOut,
@@ -50,9 +50,7 @@ async def _get_or_seed(session: AsyncSession) -> AnkiLoadConfig:
 
 @router.get(
     "/load-config",
-    response_model=AnkiLoadConfigOut,
-    dependencies=[Depends(verify_coach_token)],
-)
+    response_model=AnkiLoadConfigOut,)
 async def get_load_config_route(
     session: AsyncSession = Depends(get_session),
 ) -> AnkiLoadConfigOut:
@@ -62,9 +60,7 @@ async def get_load_config_route(
 
 @router.post(
     "/load-config",
-    response_model=AnkiLoadConfigOut,
-    dependencies=[Depends(verify_coach_token)],
-)
+    response_model=AnkiLoadConfigOut,)
 async def upsert_load_config_route(
     payload: AnkiLoadConfigIn,
     session: AsyncSession = Depends(get_session),
@@ -87,9 +83,7 @@ async def upsert_load_config_route(
 
 @router.get(
     "/load-adherence",
-    response_model=AnkiLoadAdherenceOut,
-    dependencies=[Depends(verify_coach_token)],
-)
+    response_model=AnkiLoadAdherenceOut,)
 async def get_load_adherence_route(
     window_days: int = Query(30, ge=1, le=365),
     session: AsyncSession = Depends(get_session),

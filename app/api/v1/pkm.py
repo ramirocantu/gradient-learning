@@ -12,7 +12,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_session, verify_coach_token
+from app.api.deps import get_session
 from app.schemas.pkm import DiscriminatorIn, DiscriminatorOut
 from app.services.tutor import discriminators as disc_svc
 
@@ -22,9 +22,7 @@ router = APIRouter(prefix="/pkm", tags=["pkm"])
 @router.post("/discriminators", response_model=DiscriminatorOut)
 async def post_discriminator(
     payload: DiscriminatorIn,
-    session: AsyncSession = Depends(get_session),
-    _: None = Depends(verify_coach_token),
-) -> DiscriminatorOut:
+    session: AsyncSession = Depends(get_session),) -> DiscriminatorOut:
     try:
         row = await disc_svc.write_discriminator_factor(
             session,

@@ -57,7 +57,7 @@ postgres-data/
 *.bak
 data/
 .venv
-.claude/worktrees/
+.claude/
 .junie/
 *.diff
 .codex/

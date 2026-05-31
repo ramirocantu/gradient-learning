@@ -10,6 +10,7 @@ from sqlalchemy import (
     Index,
     Integer,
     Numeric,
+    Text,
     UniqueConstraint,
     func,
 )
@@ -55,7 +56,7 @@ class ConceptEdge(Base):
     dst_node_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("outline_nodes.id", ondelete="CASCADE"), nullable=False
     )
-    kind: Mapped[str] = mapped_column(nullable=False)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
     score: Mapped[Optional[float]] = mapped_column(Numeric(6, 5), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

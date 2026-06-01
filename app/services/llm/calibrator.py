@@ -17,8 +17,10 @@ Tagging may use any model; the calibrator is a separate config knob
 (`OPENAI_CALIBRATOR_MODEL`).
 
 The grade is run on a **plain completion** (no `response_format`,
-`max_completion_tokens=1`, `reasoning_effort='none'`) so the single emitted
-token is readable. The SDK exposes `top_logprobs` on
+`max_completion_tokens=_CALIBRATOR_MAX_TOKENS` (16), `reasoning_effort='none'`)
+so the emitted tokens are readable. We read only the FIRST content token's
+logprob distribution, so the extra budget never changes the grade (see V12
+note on `_CALIBRATOR_MAX_TOKENS`). The SDK exposes `top_logprobs` on
 `choice.logprobs.content[0]`; we look for 'Yes' / 'No' (case-insensitive) and
 fall back to 0.0 when neither token makes the top-5.
 """

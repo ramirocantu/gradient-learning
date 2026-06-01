@@ -40,6 +40,12 @@ _NO_TOKEN_CANDIDATES = {"no", "n", " no", "no."}
 
 _DEFAULT_TOP_LOGPROBS = 5
 _NEG_INF = float("-inf")
+# V12: GPT-5.x cannot finish a completion in max_completion_tokens=1 (even with
+# reasoning_effort='none') — it 400s "max_tokens or model output limit reached".
+# A small headroom (≥4 observed; 16 for safety) lets it emit; we read only the
+# FIRST content token's logprob distribution, so extra budget never changes the
+# Yes/No grade. gpt-4o-class tolerated 1, but 16 is harmless there too.
+_CALIBRATOR_MAX_TOKENS = 16
 
 
 @dataclass(frozen=True)
@@ -117,7 +123,7 @@ async def grade_yes_no(
     create_kwargs: dict[str, Any] = {
         "model": model,
         "messages": messages,
-        "max_completion_tokens": 1,
+        "max_completion_tokens": _CALIBRATOR_MAX_TOKENS,  # V12
         "logprobs": True,
         "top_logprobs": top_logprobs,
     }

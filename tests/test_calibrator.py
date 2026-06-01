@@ -97,8 +97,10 @@ async def test_neither_token_present_falls_back_to_zero():
     assert result.manual_review is True
 
 
-async def test_grade_yes_no_uses_max_one_completion_token():
-    """V69: discriminator runs on a plain completion with a single emitted token."""
+async def test_grade_yes_no_reads_first_token_logprobs():
+    """V69/V12: discriminator runs on a plain completion and grades from the
+    FIRST emitted token's logprobs. max_completion_tokens carries headroom
+    (V12: GPT-5.x can't finish in 1) but only content[0] is read."""
     completion = _logprobs_completion(chosen_token="Yes", top=[("Yes", -0.05), ("No", -3.0)])
     client = make_client(completion)
 
@@ -109,7 +111,7 @@ async def test_grade_yes_no_uses_max_one_completion_token():
     )
 
     kwargs = client.chat.completions.create.await_args.kwargs
-    assert kwargs["max_completion_tokens"] == 1
+    assert kwargs["max_completion_tokens"] >= 4  # V12 — was 1, unfinishable on 5.x
     assert kwargs["logprobs"] is True
     assert kwargs["top_logprobs"] >= 2
     # Plain completion — no response_format / tools envelope.
@@ -197,3 +199,21 @@ async def test_calibrate_tag_builds_discriminator_prompt():
     assert messages[-1]["role"] == "user"
     assert "ATP synthesis" in messages[-1]["content"]
     assert "3A >> Bioenergetics" in messages[-1]["content"]
+
+
+async def test_v12_calibrator_requests_token_headroom():
+    """V12 (B2): GPT-5.x 400s on max_completion_tokens=1 ('max_tokens reached').
+    grade_yes_no must request >=4 so the model can finish; we read only the
+    first content token's logprobs, so headroom never changes the grade."""
+    completion = _logprobs_completion(chosen_token="Yes", top=[("Yes", -0.1), ("No", -2.0)])
+    client = make_client(completion)
+
+    await calibrator.grade_yes_no(
+        prompt="Does X describe Y?",
+        openai_client=client,
+        model="gpt-5.4-nano",
+    )
+
+    kwargs = client.chat.completions.create.await_args.kwargs
+    assert kwargs["max_completion_tokens"] >= 4
+    assert kwargs["logprobs"] is True

@@ -78,8 +78,9 @@ GET  /api/v1/attempts/{attempt_id}/notes   observe attempt persisted
    tag_pending    app/services/kb/jobs.py   in-process: entity_kind=QUESTION, course-scoped (V-CAP2),
                                            single-course fallback for NULL course_id; flips needs_categorization
    persists question_tags(node_id, source='llm', confidence, manual_review per V-T3)
-GET  /api/v1/questions/by-qid/{qid}         question detail; resolves QuestionTag.node_id → tags + >> paths
-GET  /api/v1/questions/by-attempt-id/{id}   same, keyed by attempt
+GET  /api/v1/tutor/questions/by-qid/{qid}        question detail; tags[] = QuestionTag(node_id,source,
+                                           confidence,rationale,manual_review), non-overridden only
+GET  /api/v1/tutor/questions/by-attempt-id/{id}  same, keyed by attempt (tutor router prefix=/tutor)
 
 # PDF → Grounded Tag (full LLM4Tag arc)
 POST /api/v1/pdf/ingest                    multipart course_id:Form + file:UploadFile → PdfIngestResponse
@@ -123,6 +124,12 @@ All routes above are `X-Coach-Token`-gated (`verify_coach_token`).
   the `<0.5` threshold (V-T3). Empty recall ⇒ no LLM call ⇒ no tag row (assert the empty path too).
 - V8: `embed_pending` runs before `tag_pending` in the arc; the test ⊥ assert a tag before embeddings +
   node vectors exist (recall would return empty and the assertion would be vacuous).
+- V12 (calibrator token floor — B2): the V69 calibrator `grade_yes_no` MUST request
+  `max_completion_tokens ≥ 4` (use 16). GPT-5.x cannot finish a completion in 1 token — it 400s
+  "max_tokens or model output limit was reached", which aborts the whole grounded tag (tagging
+  succeeds, then the per-pick calibrator throws). We read only the FIRST content token's logprob
+  distribution, so the headroom never changes the Yes/No grade. The tagging call itself was never
+  the failure — do NOT add reasoning_effort there to "fix" this.
 - V10 (question grounded tagging): a captured question with `needs_categorization=true` runs the shared
   grounded arc (`embed_pending`→`tag_pending`, entity_kind QUESTION, `entity_text=stem_plain`). On a
   non-empty recall it persists ≥1 `question_tags` row (`source='llm'`, non-NULL `confidence`, resolved
@@ -152,11 +159,12 @@ before the T3 E2E that codifies both.) Per workflow: manual pass (find/backprop)
 | T5 | . | E2E pytest — PDF→Grounded Tag (full arc): mock all four OpenAI sites (vision/extract/embed/tagging+calibrator); seed+import outline; POST ingest → assert PdfIngestResponse + `/pdf-sources` + `/atomic-facts`; in-process `embed_pending`→`tag_pending`; assert persisted tag (V7) + empty-recall no-tag path | V1,V2,V3,V7,V8,I |
 | T6 | . | manual pass — Outline→Mastery: POST course + `outline:import` (AAMC seed); GET outline tree; tag a question/fact to a node; GET node + course mastery; verify subtree rollup; log breakage to §B | V4,I |
 | T7 | . | E2E pytest — Outline→Mastery: create course → import AAMC schema → assert tree → seed tagged attempts → assert node + course mastery rollup (set-union, V-O1) | V1,V3,I |
-| T9 | . | manual pass — grounded-tag the captured question (live, real OpenAI): ensure qid 404824's course (mcat-2020) outline is imported; run `embed_pending`→`tag_pending`; verify `question_tags` persisted (node_id, source='llm', confidence) + `needs_categorization` flipped false; `GET /questions/by-qid/404824` surfaces tags; log breakage to §B | V4,V10,I |
+| T9 | x | manual pass — grounded-tag the captured question (live, real OpenAI) — found+fixed B2/V12: ensure qid 404824's course (mcat-2020) outline is imported; run `embed_pending`→`tag_pending`; verify `question_tags` persisted (node_id, source='llm', confidence) + `needs_categorization` flipped false; `GET /questions/by-qid/404824` surfaces tags; log breakage to §B | V4,V10,I |
 | T8 | . | findings report: summarize manual-pass breakage + final E2E coverage; comment on Linear RCA-10; flip §T cells; ensure `mise run check` green | §G |
 
 ## §B — bug log
 
 | id | date | cause | fix |
 |-----|------|-------|-----|
+| B2 | 2026-05-31 | Manual pass T9: live grounded-tag of captured questions 400'd on every non-empty-recall call — `Could not finish the message because max_tokens or model output limit was reached`. Initially mis-blamed the tagging call; traceback proved the throw is in `calibrator.grade_yes_no` (`calibrator.py:129`, called per-pick from `grounded.py:335`). Tagging SUCCEEDS; the calibrator's `max_completion_tokens=1` is unfinishable on `gpt-5.4-nano` (probe: 1,2→400; ≥4→OK, logprobs still returned). One bad calibrator call aborts the whole tag → 0 tags persisted. | Raise calibrator `max_completion_tokens` 1→`_CALIBRATOR_MAX_TOKENS=16` (`calibrator.py`). First-token logprob read is unaffected by headroom. Reverted the misdirected grounded.py reasoning_effort change. Guarded by V12. |
 | B1 | 2026-05-31 | Manual pass T2: re-capture (same `qid`) omitting/empty `uworld_aamc_tags` NULLs `questions.uworld_aamc_tags` + re-flags `needs_categorization` (`extension_capture.py:212,232,235`: incoming None != stored → `tags_changed` → clobber). Surfaced when a repeat POST without tags wiped a stored `["Biochemistry"]`. | **No code fix — confirmed intended** (capture = full snapshot; cleared tag = source no longer presents it). Per-capture provenance preserved in `raw_captures.raw_json` (verified cap5=`["Biochemistry"]`, cap7=`[]`). Documented as V9; T3 E2E asserts the clobber as expected. |

@@ -160,7 +160,7 @@ before the T3 E2E that codifies both.) Per workflow: manual pass (find/backprop)
 | T6 | x | manual pass — Outline→Mastery (live, green: import valid→3 nodes; invalid broken-parent→422 atomic reject V-O2; node+course mastery rollup; V-O1 dedup verified — q6's 2 tags counted once in course total=5): POST course + `outline:import` (AAMC seed); GET outline tree; tag a question/fact to a node; GET node + course mastery; verify subtree rollup; log breakage to §B | V4,I |
 | T7 | x | E2E pytest — Outline→Mastery: create course → import AAMC schema → assert tree → seed tagged attempts → assert node + course mastery rollup (set-union, V-O1) | V1,V3,I |
 | T9 | x | manual pass — grounded-tag the captured question (live, real OpenAI) — found+fixed B2/V12: ensure qid 404824's course (mcat-2020) outline is imported; run `embed_pending`→`tag_pending`; verify `question_tags` persisted (node_id, source='llm', confidence) + `needs_categorization` flipped false; `GET /questions/by-qid/404824` surfaces tags; log breakage to §B | V4,V10,I |
-| T8 | . | findings report: summarize manual-pass breakage + final E2E coverage; comment on Linear RCA-10; flip §T cells; ensure `mise run check` green | §G |
+| T8 | x | findings report: summarize manual-pass breakage + final E2E coverage; comment on Linear RCA-10; flip §T cells; ensure `mise run check` green | §G |
 
 ## §B — bug log
 

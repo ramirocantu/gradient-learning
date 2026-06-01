@@ -17,8 +17,10 @@ Tagging may use any model; the calibrator is a separate config knob
 (`OPENAI_CALIBRATOR_MODEL`).
 
 The grade is run on a **plain completion** (no `response_format`,
-`max_completion_tokens=1`, `reasoning_effort='none'`) so the single emitted
-token is readable. The SDK exposes `top_logprobs` on
+`max_completion_tokens=_CALIBRATOR_MAX_TOKENS` (16), `reasoning_effort='none'`)
+so the emitted tokens are readable. We read only the FIRST content token's
+logprob distribution, so the extra budget never changes the grade (see V12
+note on `_CALIBRATOR_MAX_TOKENS`). The SDK exposes `top_logprobs` on
 `choice.logprobs.content[0]`; we look for 'Yes' / 'No' (case-insensitive) and
 fall back to 0.0 when neither token makes the top-5.
 """
@@ -40,6 +42,12 @@ _NO_TOKEN_CANDIDATES = {"no", "n", " no", "no."}
 
 _DEFAULT_TOP_LOGPROBS = 5
 _NEG_INF = float("-inf")
+# V12: GPT-5.x cannot finish a completion in max_completion_tokens=1 (even with
+# reasoning_effort='none') — it 400s "max_tokens or model output limit reached".
+# A small headroom (≥4 observed; 16 for safety) lets it emit; we read only the
+# FIRST content token's logprob distribution, so extra budget never changes the
+# Yes/No grade. gpt-4o-class tolerated 1, but 16 is harmless there too.
+_CALIBRATOR_MAX_TOKENS = 16
 
 
 @dataclass(frozen=True)
@@ -117,7 +125,7 @@ async def grade_yes_no(
     create_kwargs: dict[str, Any] = {
         "model": model,
         "messages": messages,
-        "max_completion_tokens": 1,
+        "max_completion_tokens": _CALIBRATOR_MAX_TOKENS,  # V12
         "logprobs": True,
         "top_logprobs": top_logprobs,
     }
